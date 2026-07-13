@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import Launcher from './pages/Launcher'
 import ComingSoon from './pages/ComingSoon'
+import SuppBWaitingLines from './pages/demos/supp-b'
 
 /**
  * Demo pages register here as they are built: import the page component
@@ -14,6 +15,7 @@ export default function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Launcher />} />
+          <Route path="/supp-b" element={<SuppBWaitingLines />} />
           <Route path="/:slug" element={<ComingSoon />} />
         </Routes>
       </Layout>

@@ -77,7 +77,7 @@ export const chapters: Chapter[] = [
     title: 'Waiting Lines',
     description:
       'Watch an M/M/1 queue in motion — arrival and service rates, utilization, and Little’s Law.',
-    status: 'coming-soon',
+    status: 'available',
     exam: 2,
   },
   {
