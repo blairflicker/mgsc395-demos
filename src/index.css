@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  /* USC Garnet + supporting palette */
+  --color-garnet-50: #fdf2f4;
+  --color-garnet-100: #fbe5e9;
+  --color-garnet-200: #f5c6cf;
+  --color-garnet-300: #eda0af;
+  --color-garnet-400: #de6a82;
+  --color-garnet-500: #c53e5d;
+  --color-garnet-600: #a52547;
+  --color-garnet-700: #8a1b3b;
+  --color-garnet-800: #731a35;
+  --color-garnet-900: #630f2b;
+  --color-garnet-950: #73000a;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-stone-50 text-stone-900 antialiased;
+}
