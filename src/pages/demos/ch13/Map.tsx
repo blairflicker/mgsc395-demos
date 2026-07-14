@@ -69,8 +69,9 @@ function CgIcon() {
  * crosshair, and a draggable pin for the student's proposed facility.
  * Dragging uses pointer events like ch7's Network; the pin snaps to 0.1.
  */
-/** distance lines are recessive so the markers stay the heroes */
-const DIST_LINE = '#a8a29e'
+/** distance lines — bold enough to read against the gridlines; the hover
+ *  highlight color lives in index.css (.dist-group:hover .dist-line) */
+const DIST_LINE = '#78716c'
 
 export const LocationMap = memo(function LocationMap({
   customers,
@@ -165,12 +166,12 @@ export const LocationMap = memo(function LocationMap({
           <span className="flex items-center gap-1.5">
             <svg width="20" height="10" aria-hidden>
               {metric === 'rectilinear' ? (
-                <path d="M1,1 H13 V9 H19" fill="none" stroke={DIST_LINE} strokeWidth="1.5" strokeDasharray="4 3" />
+                <path d="M1,1 H13 V9 H19" fill="none" stroke={DIST_LINE} strokeWidth="2" strokeDasharray="4 3" />
               ) : (
-                <line x1="1" y1="9" x2="19" y2="1" stroke={DIST_LINE} strokeWidth="1.5" strokeDasharray="4 3" />
+                <line x1="1" y1="9" x2="19" y2="1" stroke={DIST_LINE} strokeWidth="2" strokeDasharray="4 3" />
               )}
             </svg>
-            Distance to pin
+            Distance to pin — hover for the math
           </span>
         )}
         <span className="text-stone-400">drag the pin to test any site</span>
@@ -243,22 +244,49 @@ export const LocationMap = memo(function LocationMap({
           ))}
 
           {/* distance paths from every customer to the pin — straight for
-              Euclidean, horizontal-then-vertical city blocks for rectilinear */}
+              Euclidean, city-block elbows for rectilinear. Elbow direction
+              depends on the angle to the pin: customers displaced mostly
+              horizontally travel vertical-first (arriving along the pin's
+              row), mostly-vertical ones travel horizontal-first — so the
+              paths don't all pile onto one column. Hover for the math. */}
           {showDistances &&
             customers.map((c) => {
-              const d =
+              const dx = Math.abs(c.x - pin.x)
+              const dy = Math.abs(c.y - pin.y)
+              let d: string
+              if (metric === 'euclidean') {
+                d = `M${px(c.x)},${py(c.y)} L${px(pin.x)},${py(pin.y)}`
+              } else if (dx > dy) {
+                // mostly horizontal — go vertical first, arrive horizontally
+                d = `M${px(c.x)},${py(c.y)} V${py(pin.y)} H${px(pin.x)}`
+              } else {
+                // mostly vertical — go horizontal first, arrive vertically
+                d = `M${px(c.x)},${py(c.y)} H${px(pin.x)} V${py(pin.y)}`
+              }
+              const dist =
+                metric === 'euclidean' ? Math.sqrt(dx * dx + dy * dy) : dx + dy
+              const calc =
                 metric === 'euclidean'
-                  ? `M${px(c.x)},${py(c.y)} L${px(pin.x)},${py(pin.y)}`
-                  : `M${px(c.x)},${py(c.y)} H${px(pin.x)} V${py(pin.y)}`
+                  ? `√(${fmt1(dx)}² + ${fmt1(dy)}²) = ${dist.toFixed(2)}`
+                  : `${fmt1(dx)} + ${fmt1(dy)} = ${fmt1(dist)}`
               return (
-                <path
-                  key={`dist-${c.id}`}
-                  d={d}
-                  fill="none"
-                  stroke={DIST_LINE}
-                  strokeWidth="1.3"
-                  strokeDasharray="5 4"
-                />
+                <g key={`dist-${c.id}`} className="dist-group">
+                  <title>
+                    {`${shortName(c.name) || 'Customer'} → pin: distance = ${calc}` +
+                      `\nload = ${c.load.toLocaleString('en-US')} tons` +
+                      `\nload × distance = ${Math.round(c.load * dist).toLocaleString('en-US')}`}
+                  </title>
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke={DIST_LINE}
+                    strokeWidth="2.2"
+                    strokeDasharray="6 5"
+                    className="dist-line"
+                  />
+                  {/* fat invisible twin so the dashed line is easy to hover */}
+                  <path d={d} fill="none" stroke="transparent" strokeWidth="13" />
+                </g>
               )
             })}
 

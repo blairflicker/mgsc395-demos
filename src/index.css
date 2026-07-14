@@ -41,3 +41,9 @@ body {
 .mm1-arrive {
   animation: mm1-arrive 0.35s ease-out;
 }
+
+/* distance lines on the facility-location map thicken on hover */
+.dist-group:hover .dist-line {
+  stroke: #292524;
+  stroke-width: 3;
+}

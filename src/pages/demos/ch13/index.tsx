@@ -30,6 +30,7 @@ const CELL_INPUT =
 
 const fmtInt = (v: number) => Math.round(v).toLocaleString('en-US')
 const fmt1 = (v: number) => v.toFixed(1)
+const fmt2 = (v: number) => v.toFixed(2)
 
 /** the blank write-in box used wherever an answer is hidden */
 function Blank({ w = 'w-14' }: { w?: string }) {
@@ -42,11 +43,12 @@ export default function Ch13FacilityLocation() {
   const [metric, setMetric] = useState<DistanceMetric>('rectilinear')
   const [showDistances, setShowDistances] = useState(true)
   const [showAnswers, setShowAnswers] = useState(true)
+  const [showCgCalc, setShowCgCalc] = useState(false)
 
   useEffect(() => {
-    document.title = 'Facility Location Â· MGSC 395'
+    document.title = 'Facility Location · MGSC 395'
     return () => {
-      document.title = 'MGSC 395 Â· Interactive Demos'
+      document.title = 'MGSC 395 · Interactive Demos'
     }
   }, [])
 
@@ -66,7 +68,7 @@ export default function Ch13FacilityLocation() {
     [customers, pin, metric],
   )
 
-  // â”€â”€ customer editing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── customer editing ────────────────────────────────────
   const patchCustomer = (id: string, patch: Partial<CustomerInput>) => {
     setCustomers((list) => list.map((c) => (c.id === id ? { ...c, ...patch } : c)))
   }
@@ -89,7 +91,7 @@ export default function Ch13FacilityLocation() {
     ])
   }
 
-  // â”€â”€ practice toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── practice toolbar ────────────────────────────────────
   const isClassData =
     customers.length === CLASS_CUSTOMERS.length &&
     CLASS_CUSTOMERS.every((c, i) => {
@@ -111,10 +113,10 @@ export default function Ch13FacilityLocation() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <DemoHeader
-        label="Chapter 13 Â· Supply Chain Logistic Networks"
+        label="Chapter 13 · Supply Chain Logistic Networks"
         title="The Center of Gravity, Live"
       >
-        The power-generator example from class â€” drag the pin to test a
+        The power-generator example from class — drag the pin to test a
         site, edit the customers, and watch the center of gravity and
         load-distance scores update live. Or hide the answers and practice
         on a random problem.
@@ -146,7 +148,118 @@ export default function Ch13FacilityLocation() {
         </button>
       </div>
 
-      {/* The map â€” the hero */}
+      {/* Customer table editor — the data comes first */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold text-stone-900">The customers</h2>
+          <p className="text-sm text-stone-600">
+            Click a cell to edit — everything recomputes as you type.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-110 text-sm">
+            <thead>
+              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                <th className="py-2 pr-2 font-semibold">Location</th>
+                <th className="w-20 py-2 pr-2 font-semibold">x</th>
+                <th className="w-20 py-2 pr-2 font-semibold">y</th>
+                <th className="w-32 py-2 pr-2 font-semibold">Load (tons)</th>
+                <th className="w-28 py-2 pr-2 text-right font-semibold">
+                  % of total
+                </th>
+                <th className="w-9 py-2" aria-label="Delete row" />
+              </tr>
+            </thead>
+            <tbody>
+              {customers.map((c) => (
+                <tr key={c.id} className="border-b border-stone-100 last:border-0">
+                  <td className="py-1 pr-2">
+                    <input
+                      type="text"
+                      value={c.name}
+                      placeholder="(location)"
+                      onChange={(e) => patchCustomer(c.id, { name: e.target.value })}
+                      aria-label="Location name"
+                      className={CELL_INPUT}
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={GRID_MAX_X}
+                      value={c.x}
+                      onChange={(e) => setCoord(c.id, 'x', Number(e.target.value))}
+                      aria-label={`x coordinate for ${c.name || 'customer'}`}
+                      className={`${CELL_INPUT} tabular-nums`}
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={GRID_MAX_Y}
+                      value={c.y}
+                      onChange={(e) => setCoord(c.id, 'y', Number(e.target.value))}
+                      aria-label={`y coordinate for ${c.name || 'customer'}`}
+                      className={`${CELL_INPUT} tabular-nums`}
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1000}
+                      value={c.load}
+                      onChange={(e) => setLoad(c.id, Number(e.target.value))}
+                      aria-label={`Load in tons for ${c.name || 'customer'}`}
+                      className={`${CELL_INPUT} tabular-nums`}
+                    />
+                  </td>
+                  <td className="py-1 pr-2 text-right text-stone-600 tabular-nums">
+                    {total > 0 ? `${fmt1((c.load / total) * 100)}%` : '—'}
+                  </td>
+                  <td className="py-1">
+                    <button
+                      onClick={() => deleteCustomer(c.id)}
+                      title={`Delete ${c.name || 'this customer'}`}
+                      aria-label={`Delete ${c.name || 'customer'}`}
+                      className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700"
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {customers.length > 0 && (
+                <tr className="border-t border-stone-300 font-medium">
+                  <td className="py-2 pr-2 font-semibold text-stone-800">Total</td>
+                  <td className="py-2 pr-2" />
+                  <td className="py-2 pr-2" />
+                  <td className="py-2 pr-2 pl-1.5 text-stone-900 tabular-nums">
+                    {fmtInt(total)}
+                  </td>
+                  <td className="py-2 pr-2 text-right text-stone-600 tabular-nums">
+                    {total > 0 ? '100.0%' : '—'}
+                  </td>
+                  <td className="py-2" />
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2">
+          <button
+            onClick={addCustomer}
+            disabled={customers.length >= MAX_CUSTOMERS}
+            className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-40"
+          >
+            + Add row
+          </button>
+        </div>
+      </div>
+
+      {/* The map — the hero */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-stone-900">The map</h2>
@@ -240,7 +353,7 @@ export default function Ch13FacilityLocation() {
                 x<sub>CG</sub>
               </div>
               <div className="text-4xl font-bold text-stone-900 tabular-nums">
-                {showAnswers ? (cgRounded ? fmt1(cgRounded.x) : 'â€”') : '?'}
+                {showAnswers ? (cgRounded ? fmt1(cgRounded.x) : '—') : '?'}
               </div>
             </div>
             <div>
@@ -248,10 +361,76 @@ export default function Ch13FacilityLocation() {
                 y<sub>CG</sub>
               </div>
               <div className="text-4xl font-bold text-stone-900 tabular-nums">
-                {showAnswers ? (cgRounded ? fmt1(cgRounded.y) : 'â€”') : '?'}
+                {showAnswers ? (cgRounded ? fmt1(cgRounded.y) : '—') : '?'}
               </div>
             </div>
           </div>
+          {showAnswers && cg && total > 0 && (
+            <>
+              <button
+                onClick={() => setShowCgCalc((v) => !v)}
+                aria-expanded={showCgCalc}
+                className="mt-4 rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+              >
+                {showCgCalc ? 'Hide calculation' : 'Show calculation'}
+              </button>
+              {showCgCalc && (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-70 text-sm">
+                    <thead>
+                      <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                        <th className="py-1.5 pr-3 font-semibold">Location</th>
+                        <th className="py-1.5 pr-3 text-right font-semibold">
+                          % of load
+                        </th>
+                        <th className="py-1.5 pr-3 text-right font-semibold">
+                          % × x
+                        </th>
+                        <th className="py-1.5 text-right font-semibold">
+                          % × y
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="tabular-nums">
+                      {customers.map((c) => {
+                        const w = c.load / total
+                        return (
+                          <tr
+                            key={c.id}
+                            className="border-b border-stone-100 last:border-0"
+                          >
+                            <td className="max-w-28 truncate py-1 pr-3 text-stone-700">
+                              {c.name || '(unnamed)'}
+                            </td>
+                            <td className="py-1 pr-3 text-right text-stone-600">
+                              {fmt1(w * 100)}%
+                            </td>
+                            <td className="py-1 pr-3 text-right text-stone-700">
+                              {fmt2(w * c.x)}
+                            </td>
+                            <td className="py-1 text-right text-stone-700">
+                              {fmt2(w * c.y)}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                      <tr className="border-t border-stone-300 font-semibold text-stone-900">
+                        <td className="py-1.5 pr-3">Sum</td>
+                        <td className="py-1.5 pr-3 text-right">100.0%</td>
+                        <td className="py-1.5 pr-3 text-right">{fmt2(cg.x)}</td>
+                        <td className="py-1.5 text-right">{fmt2(cg.y)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p className="mt-2 text-xs text-stone-500 tabular-nums">
+                    Each customer pulls the CG toward itself in proportion to
+                    its share of the load: CG = ({fmt1(cgRounded!.x)},{' '}
+                    {fmt1(cgRounded!.y)}).
+                  </p>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="rounded-xl border border-stone-200 bg-white p-5 lg:col-span-2">
@@ -260,9 +439,9 @@ export default function Ch13FacilityLocation() {
           </h2>
           <p className="mb-4 text-sm text-stone-600 tabular-nums">
             {metric === 'rectilinear'
-              ? 'd = |xâ‚‚ âˆ’ xâ‚| + |yâ‚‚ âˆ’ yâ‚|'
-              : 'd = âˆš((xâ‚‚ âˆ’ xâ‚)Â² + (yâ‚‚ âˆ’ yâ‚)Â²)'}
-            {'â€ƒÂ·â€ƒLD = Î£ (load Ã— distance)'}
+              ? 'd = |x₂ − x₁| + |y₂ − y₁|'
+              : 'd = √((x₂ − x₁)² + (y₂ − y₁)²)'}
+            {' · LD = Σ (load × distance)'}
           </p>
           <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
             <div>
@@ -276,7 +455,7 @@ export default function Ch13FacilityLocation() {
                 )}
               </div>
               <div className="text-3xl font-bold text-stone-900 tabular-nums">
-                {showAnswers ? (ldAtCg !== null ? fmtInt(ldAtCg) : 'â€”') : '?'}
+                {showAnswers ? (ldAtCg !== null ? fmtInt(ldAtCg) : '—') : '?'}
               </div>
             </div>
             <div>
@@ -292,7 +471,7 @@ export default function Ch13FacilityLocation() {
                     ? 'same as the CG'
                     : ldDelta > 0
                       ? `+${fmtInt(ldDelta)} vs the CG`
-                      : `âˆ’${fmtInt(-ldDelta)} vs the CG â€” your pin beats it`}
+                      : `−${fmtInt(-ldDelta)} vs the CG — your pin beats it`}
                 </div>
               )}
             </div>
@@ -309,13 +488,13 @@ export default function Ch13FacilityLocation() {
                       Dist. from CG
                     </th>
                     <th className="py-2 pr-3 text-right font-semibold">
-                      Load Ã— dist
+                      Load × dist
                     </th>
                     <th className="py-2 pr-3 text-right font-semibold">
                       Dist. from pin
                     </th>
                     <th className="py-2 text-right font-semibold">
-                      Load Ã— dist
+                      Load × dist
                     </th>
                   </tr>
                 </thead>
@@ -331,12 +510,12 @@ export default function Ch13FacilityLocation() {
                       {showAnswers ? (
                         <>
                           <td className="py-1.5 pr-3 text-right text-stone-700">
-                            {cgRounded ? fmt1(distance(metric, c, cgRounded)) : 'â€”'}
+                            {cgRounded ? fmt1(distance(metric, c, cgRounded)) : '—'}
                           </td>
                           <td className="py-1.5 pr-3 text-right text-stone-700">
                             {cgRounded
                               ? fmtInt(c.load * distance(metric, c, cgRounded))
-                              : 'â€”'}
+                              : '—'}
                           </td>
                           <td className="py-1.5 pr-3 text-right text-stone-700">
                             {fmt1(distance(metric, c, pin))}
@@ -361,7 +540,7 @@ export default function Ch13FacilityLocation() {
                     <td className="py-2 pr-3" />
                     {showAnswers ? (
                       <td className="py-2 pr-3 text-right">
-                        {ldAtCg !== null ? fmtInt(ldAtCg) : 'â€”'}
+                        {ldAtCg !== null ? fmtInt(ldAtCg) : '—'}
                       </td>
                     ) : (
                       <td className="py-2 pr-3"><Blank /></td>
@@ -379,118 +558,6 @@ export default function Ch13FacilityLocation() {
           )}
         </div>
       </div>
-
-      {/* Customer table editor */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3">
-          <h2 className="text-lg font-semibold text-stone-900">The customers</h2>
-          <p className="text-sm text-stone-600">
-            Click a cell to edit â€” everything recomputes as you type.
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-110 text-sm">
-            <thead>
-              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                <th className="py-2 pr-2 font-semibold">Location</th>
-                <th className="w-20 py-2 pr-2 font-semibold">x</th>
-                <th className="w-20 py-2 pr-2 font-semibold">y</th>
-                <th className="w-32 py-2 pr-2 font-semibold">Load (tons)</th>
-                <th className="w-28 py-2 pr-2 text-right font-semibold">
-                  % of total
-                </th>
-                <th className="w-9 py-2" aria-label="Delete row" />
-              </tr>
-            </thead>
-            <tbody>
-              {customers.map((c) => (
-                <tr key={c.id} className="border-b border-stone-100 last:border-0">
-                  <td className="py-1 pr-2">
-                    <input
-                      type="text"
-                      value={c.name}
-                      placeholder="(location)"
-                      onChange={(e) => patchCustomer(c.id, { name: e.target.value })}
-                      aria-label="Location name"
-                      className={CELL_INPUT}
-                    />
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={GRID_MAX_X}
-                      value={c.x}
-                      onChange={(e) => setCoord(c.id, 'x', Number(e.target.value))}
-                      aria-label={`x coordinate for ${c.name || 'customer'}`}
-                      className={`${CELL_INPUT} tabular-nums`}
-                    />
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={GRID_MAX_Y}
-                      value={c.y}
-                      onChange={(e) => setCoord(c.id, 'y', Number(e.target.value))}
-                      aria-label={`y coordinate for ${c.name || 'customer'}`}
-                      className={`${CELL_INPUT} tabular-nums`}
-                    />
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step={1000}
-                      value={c.load}
-                      onChange={(e) => setLoad(c.id, Number(e.target.value))}
-                      aria-label={`Load in tons for ${c.name || 'customer'}`}
-                      className={`${CELL_INPUT} tabular-nums`}
-                    />
-                  </td>
-                  <td className="py-1 pr-2 text-right text-stone-600 tabular-nums">
-                    {total > 0 ? `${fmt1((c.load / total) * 100)}%` : 'â€”'}
-                  </td>
-                  <td className="py-1">
-                    <button
-                      onClick={() => deleteCustomer(c.id)}
-                      title={`Delete ${c.name || 'this customer'}`}
-                      aria-label={`Delete ${c.name || 'customer'}`}
-                      className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700"
-                    >
-                      Ã—
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {customers.length > 0 && (
-                <tr className="border-t border-stone-300 font-medium">
-                  <td className="py-2 pr-2 font-semibold text-stone-800">Total</td>
-                  <td className="py-2 pr-2" />
-                  <td className="py-2 pr-2" />
-                  <td className="py-2 pr-2 pl-1.5 text-stone-900 tabular-nums">
-                    {fmtInt(total)}
-                  </td>
-                  <td className="py-2 pr-2 text-right text-stone-600 tabular-nums">
-                    {total > 0 ? '100.0%' : 'â€”'}
-                  </td>
-                  <td className="py-2" />
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-2">
-          <button
-            onClick={addCustomer}
-            disabled={customers.length >= MAX_CUSTOMERS}
-            className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-40"
-          >
-            + Add row
-          </button>
-        </div>
-      </div>
-
     </div>
   )
 }
