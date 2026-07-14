@@ -41,6 +41,15 @@ function shortName(name: string): string {
   return comma === -1 ? name : name.slice(0, comma)
 }
 
+/** a stable pseudo-random fraction per customer (hash of its id) that
+ *  places the extra rectilinear break — stable so lines don't jitter as
+ *  the pin drags, different per customer so paths rarely overlap */
+function elbowFraction(id: string): number {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 9973
+  return 0.35 + 0.45 * (h / 9973)
+}
+
 function PinIcon() {
   return (
     <svg viewBox="0 0 14 14" width="12" height="12" aria-hidden>
@@ -244,11 +253,12 @@ export const LocationMap = memo(function LocationMap({
           ))}
 
           {/* distance paths from every customer to the pin — straight for
-              Euclidean, city-block elbows for rectilinear. Elbow direction
-              depends on the angle to the pin: customers displaced mostly
-              horizontally travel vertical-first (arriving along the pin's
-              row), mostly-vertical ones travel horizontal-first — so the
-              paths don't all pile onto one column. Hover for the math. */}
+              Euclidean, city-block routes for rectilinear. Rectilinear
+              paths take a Z with two bends: the middle segment sits at a
+              stable per-customer random spot between the customer and the
+              pin, so the long runs stay off the pin's shared row/column
+              and lines rarely overlap. Orientation follows the dominant
+              axis of the displacement. Hover for the math. */}
           {showDistances &&
             customers.map((c) => {
               const dx = Math.abs(c.x - pin.x)
@@ -256,12 +266,14 @@ export const LocationMap = memo(function LocationMap({
               let d: string
               if (metric === 'euclidean') {
                 d = `M${px(c.x)},${py(c.y)} L${px(pin.x)},${py(pin.y)}`
-              } else if (dx > dy) {
-                // mostly horizontal — go vertical first, arrive horizontally
-                d = `M${px(c.x)},${py(c.y)} V${py(pin.y)} H${px(pin.x)}`
+              } else if (dx >= dy) {
+                // mostly horizontal — H to a random break, V, then H home
+                const xm = c.x + elbowFraction(c.id) * (pin.x - c.x)
+                d = `M${px(c.x)},${py(c.y)} H${px(xm)} V${py(pin.y)} H${px(pin.x)}`
               } else {
-                // mostly vertical — go horizontal first, arrive vertically
-                d = `M${px(c.x)},${py(c.y)} H${px(pin.x)} V${py(pin.y)}`
+                // mostly vertical — V to a random break, H, then V home
+                const ym = c.y + elbowFraction(c.id) * (pin.y - c.y)
+                d = `M${px(c.x)},${py(c.y)} V${py(ym)} H${px(pin.x)} V${py(pin.y)}`
               }
               const dist =
                 metric === 'euclidean' ? Math.sqrt(dx * dx + dy * dy) : dx + dy
