@@ -104,7 +104,7 @@ export const chapters: Chapter[] = [
     title: 'Project Management',
     description:
       'Forward and backward pass, slack, the critical path, and cost-time tradeoffs (crashing).',
-    status: 'coming-soon',
+    status: 'available',
     exam: 2,
   },
   // ── Exam 3 ──────────────────────────────────────────────
