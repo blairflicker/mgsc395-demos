@@ -109,8 +109,6 @@ export const Gantt = memo(function Gantt({ schedule }: { schedule: CpmSchedule }
     dragRef.current = null
   }
 
-  const anyMoved = acts.some((a) => startOf(a, starts) !== a.est)
-
   const ticks: number[] = []
   for (let w = 0; w <= axisMax; w += step) ticks.push(w)
 
@@ -135,41 +133,31 @@ export const Gantt = memo(function Gantt({ schedule }: { schedule: CpmSchedule }
 
   return (
     <div>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-5 gap-y-1">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-stone-500">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-4 rounded-sm" style={{ backgroundColor: COLOR_CRITICAL }} />
-            Critical — zero slack
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-4 rounded-sm" style={{ backgroundColor: COLOR_MUTED }} />
-            Has slack — drag me
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-1.5 w-4 rounded-full" style={{ backgroundColor: COLOR_SLACK }} />
-            Slack window (EST → LFT)
-          </span>
-          <span className="flex items-center gap-1.5">
-            <svg width="16" height="12" aria-hidden>
-              <path d="M2,2 L2,9 L14,9" fill="none" stroke={COLOR_SLACK} strokeWidth="1.5" />
-            </svg>
-            Predecessor → successor
-          </span>
-          <span className="flex items-center gap-1.5">
-            <svg width="18" height="8" aria-hidden>
-              <line x1="0" y1="4" x2="18" y2="4" stroke={COLOR_REFERENCE} strokeWidth="2" strokeDasharray="4 3" />
-            </svg>
-            Project finish
-          </span>
-        </div>
-        {anyMoved && (
-          <button
-            onClick={() => setStarts({})}
-            className="rounded-md border border-stone-300 bg-white px-2.5 py-1 text-xs font-medium text-stone-600 hover:bg-stone-50"
-          >
-            Snap back to earliest start
-          </button>
-        )}
+      <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-stone-500">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-4 rounded-sm" style={{ backgroundColor: COLOR_CRITICAL }} />
+          Critical — zero slack
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-4 rounded-sm" style={{ backgroundColor: COLOR_MUTED }} />
+          Has slack — drag me
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-1.5 w-4 rounded-full" style={{ backgroundColor: COLOR_SLACK }} />
+          Slack window (EST → LFT)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <svg width="16" height="12" aria-hidden>
+            <path d="M2,2 L2,9 L14,9" fill="none" stroke={COLOR_SLACK} strokeWidth="1.5" />
+          </svg>
+          Predecessor → successor
+        </span>
+        <span className="flex items-center gap-1.5">
+          <svg width="18" height="8" aria-hidden>
+            <line x1="0" y1="4" x2="18" y2="4" stroke={COLOR_REFERENCE} strokeWidth="2" strokeDasharray="4 3" />
+          </svg>
+          Project finish
+        </span>
       </div>
       <div className="overflow-x-auto">
         <svg
