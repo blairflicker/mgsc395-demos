@@ -482,6 +482,57 @@ export default function Ch7ProjectManagement() {
         </div>
       </div>
 
+      {/* Paths — listed first: you can only spot the critical path after
+          writing down every path */}
+      {showAnswers && (
+        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-5">
+          <h2 className="mb-1 text-lg font-semibold text-stone-900">
+            Every path from Start to Finish
+          </h2>
+          <p className="mb-4 max-w-3xl text-sm text-stone-600">
+            First, list every path — a path&rsquo;s time is the sum of its
+            activities&rsquo; times. The slowest path sets the project
+            duration, no schedule can beat it, and that is precisely the
+            critical path. Just like a bottleneck sets a process&rsquo;s
+            capacity.
+          </p>
+          <div className="space-y-3">
+            {schedule.paths.map((p) => (
+              <div key={p.ids.join('-')}>
+                <div className="mb-1 flex items-baseline justify-between text-sm">
+                  <span
+                    className={
+                      p.critical
+                        ? 'font-semibold text-stone-900'
+                        : 'text-stone-600'
+                    }
+                  >
+                    {p.ids.join('–')}
+                    {p.critical && (
+                      <span className="ml-2 rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800">
+                        critical
+                      </span>
+                    )}
+                  </span>
+                  <span className="font-medium text-stone-700 tabular-nums">
+                    {p.duration} wks
+                  </span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-stone-100">
+                  <div
+                    className="h-2 rounded-full"
+                    style={{
+                      width: `${(p.duration / maxPathTime) * 100}%`,
+                      backgroundColor: p.critical ? COLOR_CRITICAL : COLOR_MUTED,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Headline result */}
       <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
         <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
@@ -555,66 +606,10 @@ export default function Ch7ProjectManagement() {
         <Network schedule={schedule} hideAnswers={!showAnswers} />
       </div>
 
-      {showAnswers && (
-        <div className="mb-6 grid gap-4 lg:grid-cols-5">
-          {/* Paths */}
-          <div className="rounded-xl border border-stone-200 bg-white p-5 lg:col-span-2">
-            <h2 className="mb-1 text-lg font-semibold text-stone-900">
-              Every path from Start to Finish
-            </h2>
-            <p className="mb-4 text-sm text-stone-600">
-              A path&rsquo;s time is the sum of its activities&rsquo; times.
-              The slowest path sets the project duration — no schedule can
-              beat it, just like a bottleneck sets a process&rsquo;s capacity.
-            </p>
-            <div className="space-y-3">
-              {schedule.paths.map((p) => (
-                <div key={p.ids.join('-')}>
-                  <div className="mb-1 flex items-baseline justify-between text-sm">
-                    <span
-                      className={
-                        p.critical
-                          ? 'font-semibold text-stone-900'
-                          : 'text-stone-600'
-                      }
-                    >
-                      {p.ids.join('–')}
-                      {p.critical && (
-                        <span className="ml-2 rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800">
-                          critical
-                        </span>
-                      )}
-                    </span>
-                    <span className="font-medium text-stone-700 tabular-nums">
-                      {p.duration} wks
-                    </span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-stone-100">
-                    <div
-                      className="h-2 rounded-full"
-                      style={{
-                        width: `${(p.duration / maxPathTime) * 100}%`,
-                        backgroundColor: p.critical ? COLOR_CRITICAL : COLOR_MUTED,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Schedule table */}
-          <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white p-5 lg:col-span-3">
-            <ScheduleTable schedule={schedule} showAnswers />
-          </div>
-        </div>
-      )}
-
-      {!showAnswers && (
-        <div className="mb-6 overflow-x-auto rounded-xl border border-stone-200 bg-white p-5">
-          <ScheduleTable schedule={schedule} showAnswers={false} />
-        </div>
-      )}
+      {/* Schedule table */}
+      <div className="mb-6 overflow-x-auto rounded-xl border border-stone-200 bg-white p-5">
+        <ScheduleTable schedule={schedule} showAnswers={showAnswers} />
+      </div>
 
       {/* Gantt */}
       {showAnswers && (
