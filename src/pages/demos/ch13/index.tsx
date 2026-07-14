@@ -37,13 +37,24 @@ function Blank({ w = 'w-14' }: { w?: string }) {
   return <div className={`ml-auto h-5 ${w} rounded border border-stone-200 bg-stone-50/50`} />
 }
 
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  )
+}
+
 export default function Ch13FacilityLocation() {
   const [customers, setCustomers] = useState<CustomerInput[]>(cloneCustomers)
   const [pin, setPin] = useState<Point>(DEFAULT_PIN)
   const [metric, setMetric] = useState<DistanceMetric>('rectilinear')
   const [showDistances, setShowDistances] = useState(true)
   const [showAnswers, setShowAnswers] = useState(true)
-  const [showCgCalc, setShowCgCalc] = useState(false)
 
   useEffect(() => {
     document.title = 'Facility Location · MGSC 395'
@@ -89,6 +100,22 @@ export default function Ch13FacilityLocation() {
       ...list,
       { id: nextCustomerId(list), name: '', x: 10, y: 8, load: 10_000 },
     ])
+  }
+
+  /** raw customer data only — students compute % of total themselves */
+  const downloadCsv = () => {
+    const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s)
+    const lines = [
+      'Location,x,y,Load (tons)',
+      ...customers.map((c) => [esc(c.name), c.x, c.y, c.load].join(',')),
+    ]
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'customers.csv'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   // ── practice toolbar ────────────────────────────────────
@@ -226,7 +253,7 @@ export default function Ch13FacilityLocation() {
                       aria-label={`Delete ${c.name || 'customer'}`}
                       className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700"
                     >
-                      ×
+                      <TrashIcon />
                     </button>
                   </td>
                 </tr>
@@ -248,13 +275,20 @@ export default function Ch13FacilityLocation() {
             </tbody>
           </table>
         </div>
-        <div className="mt-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           <button
             onClick={addCustomer}
             disabled={customers.length >= MAX_CUSTOMERS}
             className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-40"
           >
             + Add row
+          </button>
+          <button
+            onClick={downloadCsv}
+            disabled={customers.length === 0}
+            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+          >
+            Download CSV
           </button>
         </div>
       </div>
@@ -366,16 +400,7 @@ export default function Ch13FacilityLocation() {
             </div>
           </div>
           {showAnswers && cg && total > 0 && (
-            <>
-              <button
-                onClick={() => setShowCgCalc((v) => !v)}
-                aria-expanded={showCgCalc}
-                className="mt-4 rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
-              >
-                {showCgCalc ? 'Hide calculation' : 'Show calculation'}
-              </button>
-              {showCgCalc && (
-                <div className="mt-3 overflow-x-auto">
+            <div className="mt-4 overflow-x-auto">
                   <table className="w-full min-w-70 text-sm">
                     <thead>
                       <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
@@ -427,9 +452,7 @@ export default function Ch13FacilityLocation() {
                     its share of the load: CG = ({fmt1(cgRounded!.x)},{' '}
                     {fmt1(cgRounded!.y)}).
                   </p>
-                </div>
-              )}
-            </>
+            </div>
           )}
         </div>
 

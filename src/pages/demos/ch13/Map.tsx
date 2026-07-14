@@ -1,4 +1,4 @@
-import { memo, useRef } from 'react'
+import { memo, useRef, useState } from 'react'
 import {
   GRID_MAX_X,
   GRID_MAX_Y,
@@ -103,7 +103,20 @@ export const LocationMap = memo(function LocationMap({
   onPinMove: (p: Point) => void
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ dx: number; dy: number } | null>(null)
+  /** the hovered distance line's customer + tooltip position (no OS title
+   *  delay — the tooltip appears immediately) */
+  const [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null)
+
+  const moveTooltip = (e: React.PointerEvent, id: string) => {
+    const rect = wrapRef.current!.getBoundingClientRect()
+    setHover({
+      id,
+      x: Math.min(e.clientX - rect.left + 14, rect.width - 230),
+      y: e.clientY - rect.top + 14,
+    })
+  }
 
   /** map a pointer event to viewBox coordinates */
   const svgPoint = (e: React.PointerEvent) => {
@@ -185,7 +198,7 @@ export const LocationMap = memo(function LocationMap({
         )}
         <span className="text-stone-400">drag the pin to test any site</span>
       </div>
-      <div className="overflow-x-auto">
+      <div ref={wrapRef} className="relative overflow-x-auto">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
@@ -275,19 +288,8 @@ export const LocationMap = memo(function LocationMap({
                 const ym = c.y + elbowFraction(c.id) * (pin.y - c.y)
                 d = `M${px(c.x)},${py(c.y)} V${py(ym)} H${px(pin.x)} V${py(pin.y)}`
               }
-              const dist =
-                metric === 'euclidean' ? Math.sqrt(dx * dx + dy * dy) : dx + dy
-              const calc =
-                metric === 'euclidean'
-                  ? `√(${fmt1(dx)}² + ${fmt1(dy)}²) = ${dist.toFixed(2)}`
-                  : `${fmt1(dx)} + ${fmt1(dy)} = ${fmt1(dist)}`
               return (
                 <g key={`dist-${c.id}`} className="dist-group">
-                  <title>
-                    {`${shortName(c.name) || 'Customer'} → pin: distance = ${calc}` +
-                      `\nload = ${c.load.toLocaleString('en-US')} tons` +
-                      `\nload × distance = ${Math.round(c.load * dist).toLocaleString('en-US')}`}
-                  </title>
                   <path
                     d={d}
                     fill="none"
@@ -297,7 +299,15 @@ export const LocationMap = memo(function LocationMap({
                     className="dist-line"
                   />
                   {/* fat invisible twin so the dashed line is easy to hover */}
-                  <path d={d} fill="none" stroke="transparent" strokeWidth="13" />
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth="13"
+                    onPointerEnter={(e) => moveTooltip(e, c.id)}
+                    onPointerMove={(e) => moveTooltip(e, c.id)}
+                    onPointerLeave={() => setHover(null)}
+                  />
                 </g>
               )
             })}
@@ -374,6 +384,9 @@ export const LocationMap = memo(function LocationMap({
                 fontSize="11.5"
                 fontWeight="700"
                 fill={INK}
+                stroke="white"
+                strokeWidth="3.5"
+                paintOrder="stroke"
                 className="tabular-nums"
               >
                 CG ({fmt1(cg.x)}, {fmt1(cg.y)})
@@ -403,12 +416,54 @@ export const LocationMap = memo(function LocationMap({
               fontSize="11"
               fontWeight="600"
               fill={INK_SOFT}
+              stroke="white"
+              strokeWidth="3.5"
+              paintOrder="stroke"
               className="tabular-nums"
             >
               ({fmt1(pin.x)}, {fmt1(pin.y)})
             </text>
           </g>
         </svg>
+
+        {/* instant tooltip with the full distance calculation */}
+        {hover &&
+          (() => {
+            const c = customers.find((x) => x.id === hover.id)
+            if (!c) return null
+            const dx = Math.abs(c.x - pin.x)
+            const dy = Math.abs(c.y - pin.y)
+            const dist =
+              metric === 'euclidean' ? Math.sqrt(dx * dx + dy * dy) : dx + dy
+            return (
+              <div
+                className="pointer-events-none absolute z-10 rounded-lg border border-stone-200 bg-white/95 px-3 py-2 text-xs text-stone-700 shadow-md tabular-nums"
+                style={{ left: hover.x, top: hover.y }}
+              >
+                <div className="mb-1 font-semibold text-stone-900">
+                  {shortName(c.name) || 'Customer'} ({fmt1(c.x)}, {fmt1(c.y)}) →
+                  pin ({fmt1(pin.x)}, {fmt1(pin.y)})
+                </div>
+                <div>
+                  |x₂ − x₁| = |{fmt1(c.x)} − {fmt1(pin.x)}| = {fmt1(dx)}
+                </div>
+                <div>
+                  |y₂ − y₁| = |{fmt1(c.y)} − {fmt1(pin.y)}| = {fmt1(dy)}
+                </div>
+                <div className="font-medium text-stone-900">
+                  {metric === 'euclidean'
+                    ? `distance = √(${fmt1(dx)}² + ${fmt1(dy)}²) = ${dist.toFixed(2)}`
+                    : `distance = ${fmt1(dx)} + ${fmt1(dy)} = ${fmt1(dist)}`}
+                </div>
+                <div className="mt-1 border-t border-stone-100 pt-1">
+                  load = {c.load.toLocaleString('en-US')} tons
+                  <br />
+                  load × distance ={' '}
+                  {Math.round(c.load * dist).toLocaleString('en-US')}
+                </div>
+              </div>
+            )
+          })()}
       </div>
     </div>
   )
