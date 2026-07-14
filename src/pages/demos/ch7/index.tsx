@@ -19,7 +19,13 @@ const MAX_DUR = 52
 
 const CLASS_PLAN = computeCpm(ST_JOHNS)
 
-const cloneClass = (): ActivityInput[] =>
+/** an activity row in the editor; hiding keeps the data but removes the
+ *  activity (and any references to it) from every computation and visual */
+interface ActivityRow extends ActivityInput {
+  hidden?: boolean
+}
+
+const cloneClass = (): ActivityRow[] =>
   ST_JOHNS.map((a) => ({ ...a, predecessors: [...a.predecessors] }))
 
 function fmtMoney(n: number): string {
@@ -30,8 +36,28 @@ function pathLabel(ids: string[]): string {
   return ['Start', ...ids, 'Finish'].join(' → ')
 }
 
+function EyeIcon({ open }: { open: boolean }) {
+  return open ? (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M17.94 17.94A10.5 10.5 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.06-5.94" />
+      <path d="M9.9 4.24A10.9 10.9 0 0 1 12 5c7 0 11 7 11 7a19.8 19.8 0 0 1-3.22 4.31" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  )
+}
+
+const CELL_INPUT =
+  'w-full rounded border border-transparent bg-transparent px-1.5 py-0.5 text-sm ' +
+  'hover:border-stone-200 focus:border-garnet-400 focus:bg-white focus:outline-none'
+
 export default function Ch7ProjectManagement() {
-  const [activities, setActivities] = useState<ActivityInput[]>(cloneClass)
+  const [rows, setRows] = useState<ActivityRow[]>(cloneClass)
+  const [predDrafts, setPredDrafts] = useState<Record<string, string>>({})
   const [crashed, setCrashed] = useState<Record<string, boolean>>({})
   const [showAnswers, setShowAnswers] = useState(true)
 
@@ -42,103 +68,171 @@ export default function Ch7ProjectManagement() {
     }
   }, [])
 
-  /** true when the activity set and precedence structure match the class
-   *  project exactly (durations may differ — the crash panel handles that) */
+  const visibleIds = useMemo(
+    () => new Set(rows.filter((r) => !r.hidden).map((r) => r.id)),
+    [rows],
+  )
+
+  /** the active project: visible rows, with references to hidden
+   *  activities filtered out (their data stays in the table) */
+  const activeInputs = useMemo<ActivityInput[]>(
+    () =>
+      rows
+        .filter((r) => !r.hidden)
+        .map((r) => ({
+          id: r.id,
+          name: r.name,
+          duration: r.duration,
+          predecessors: r.predecessors.filter((p) => visibleIds.has(p)),
+        })),
+    [rows, visibleIds],
+  )
+
+  /** true when the ACTIVE project matches the class structure exactly */
   const isClassStructure = useMemo(() => {
-    if (activities.length !== ST_JOHNS.length) return false
+    if (activeInputs.length !== ST_JOHNS.length) return false
     return ST_JOHNS.every((c) => {
-      const a = activities.find((x) => x.id === c.id)
+      const a = activeInputs.find((x) => x.id === c.id)
       return (
         a !== undefined &&
         [...a.predecessors].sort().join() === [...c.predecessors].sort().join()
       )
     })
-  }, [activities])
+  }, [activeInputs])
 
-  /** durations with any active crash pinning its activity to crash time */
+  /** active durations with any crash pinning its activity to crash time */
   const effective = useMemo(() => {
-    if (!isClassStructure) return activities
-    return activities.map((a) => {
+    if (!isClassStructure) return activeInputs
+    return activeInputs.map((a) => {
       const option = CRASH_OPTIONS.find((o) => o.id === a.id && crashed[o.id])
       return option ? { ...a, duration: option.crashTime } : a
     })
-  }, [activities, crashed, isClassStructure])
+  }, [activeInputs, crashed, isClassStructure])
 
   const schedule = useMemo(() => computeCpm(effective), [effective])
-  /** current durations with NO crashes — the before picture for the crash panel */
   const baseline = useMemo(
-    () => (isClassStructure ? computeCpm(activities) : null),
-    [activities, isClassStructure],
+    () => (isClassStructure ? computeCpm(activeInputs) : null),
+    [activeInputs, isClassStructure],
   )
-  /** what each crash would do on its own, given the current durations */
   const crashImpacts = useMemo(
     () =>
       isClassStructure
         ? CRASH_OPTIONS.map((option) => ({
             option,
             duration: computeCpm(
-              activities.map((a) =>
+              activeInputs.map((a) =>
                 a.id === option.id ? { ...a, duration: option.crashTime } : a,
               ),
             ).projectDuration,
           }))
         : [],
-    [activities, isClassStructure],
+    [activeInputs, isClassStructure],
   )
 
-  const durationOf = (id: string) => activities.find((a) => a.id === id)!.duration
+  // ── row editing ─────────────────────────────────────────
+  const patchRow = (id: string, patch: Partial<ActivityRow>) => {
+    setRows((list) => list.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  }
 
   const setDuration = (id: string, value: number) => {
-    const v = Math.min(MAX_DUR, Math.max(MIN_DUR, Math.round(value)))
-    setActivities((list) => list.map((a) => (a.id === id ? { ...a, duration: v } : a)))
+    if (!Number.isFinite(value)) return
+    patchRow(id, {
+      duration: Math.min(MAX_DUR, Math.max(MIN_DUR, Math.round(value))),
+    })
   }
 
-  const togglePredecessor = (id: string, candidate: string) => {
-    setActivities((list) =>
-      list.map((a) => {
-        if (a.id !== id) return a
-        const has = a.predecessors.includes(candidate)
-        return {
-          ...a,
-          predecessors: has
-            ? a.predecessors.filter((p) => p !== candidate)
-            : [...a.predecessors, candidate].sort(),
-        }
-      }),
-    )
+  /** parse a typed predecessor list; returns null when any token is not an
+   *  existing letter, is the row itself, or would create a cycle */
+  const parsePreds = (id: string, text: string): string[] | null => {
+    const tokens = [...new Set(
+      text.toUpperCase().split(/[,\s]+/).filter(Boolean),
+    )]
+    const blocked = descendantsOf(rows, id)
+    for (const t of tokens) {
+      if (t === id) return null
+      if (!rows.some((r) => r.id === t)) return null
+      if (blocked.has(t)) return null
+    }
+    return tokens.sort()
   }
 
-  const removeActivity = (id: string) => {
-    setActivities((list) =>
+  const onPredsChange = (id: string, text: string) => {
+    setPredDrafts((d) => ({ ...d, [id]: text }))
+    const parsed = parsePreds(id, text)
+    if (parsed) patchRow(id, { predecessors: parsed })
+  }
+
+  const onPredsBlur = (id: string) => {
+    setPredDrafts((d) => {
+      const { [id]: _, ...rest } = d
+      return rest
+    })
+  }
+
+  const toggleHidden = (id: string) => {
+    setRows((list) => list.map((r) => (r.id === id ? { ...r, hidden: !r.hidden } : r)))
+    setCrashed({})
+  }
+
+  const deleteRow = (id: string) => {
+    setRows((list) =>
       list
-        .filter((a) => a.id !== id)
-        .map((a) => ({ ...a, predecessors: a.predecessors.filter((p) => p !== id) })),
+        .filter((r) => r.id !== id)
+        .map((r) => ({ ...r, predecessors: r.predecessors.filter((p) => p !== id) })),
     )
     setCrashed({})
   }
 
-  const addActivity = () => {
-    setActivities((list) => {
+  const addRow = () => {
+    setRows((list) => {
       const id = nextActivityId(list)
       if (!id) return list
       return [...list, { id, name: '', predecessors: [], duration: 5 }]
     })
   }
 
+  const hideNonCritical = () => {
+    const critical = new Set(schedule.criticalIds)
+    setRows((list) =>
+      list.map((r) => (critical.has(r.id) ? r : { ...r, hidden: true })),
+    )
+    setCrashed({})
+  }
+
+  const showAll = () => {
+    setRows((list) => list.map((r) => ({ ...r, hidden: false })))
+  }
+
   const backToClass = () => {
-    setActivities(cloneClass())
+    setRows(cloneClass())
+    setPredDrafts({})
     setCrashed({})
   }
 
   const makeRandom = () => {
-    setActivities(randomProject())
+    setRows(randomProject())
+    setPredDrafts({})
     setCrashed({})
     setShowAnswers(false)
   }
 
+  const anyHidden = rows.some((r) => r.hidden)
+  const anyNonCriticalVisible = rows.some(
+    (r) => !r.hidden && !schedule.criticalIds.includes(r.id),
+  )
   const isClassPlan =
-    isClassStructure &&
-    ST_JOHNS.every((c) => effective.find((a) => a.id === c.id)!.duration === c.duration)
+    !anyHidden &&
+    rows.length === ST_JOHNS.length &&
+    ST_JOHNS.every((c) => {
+      const r = rows.find((x) => x.id === c.id)
+      return (
+        r !== undefined &&
+        r.name === c.name &&
+        r.duration === c.duration &&
+        [...r.predecessors].sort().join() === [...c.predecessors].sort().join()
+      )
+    }) &&
+    !CRASH_OPTIONS.some((o) => crashed[o.id])
 
   const anyCrash = isClassStructure && CRASH_OPTIONS.some((o) => crashed[o.id])
   const totalCrashSpend = CRASH_OPTIONS.filter((o) => crashed[o.id]).reduce(
@@ -149,7 +243,7 @@ export default function Ch7ProjectManagement() {
     ? baseline.projectDuration - schedule.projectDuration
     : 0
 
-  const maxPathTime = Math.max(...schedule.paths.map((p) => p.duration))
+  const maxPathTime = Math.max(...schedule.paths.map((p) => p.duration), 1)
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -158,10 +252,10 @@ export default function Ch7ProjectManagement() {
         title="The Critical Path, Live"
       >
         The St. John&rsquo;s Hospital project from class — but editable.
-        Change estimated times, rewire predecessors, add or remove
-        activities, and watch the forward pass, backward pass, slack, and
-        the critical path recompute instantly. Or hide the answers, generate
-        a random project, and run the two games yourself.
+        Click any cell in the table to change it, hide activities to study a
+        slimmer project, and watch the forward pass, backward pass, slack,
+        and the critical path recompute instantly. Or hide the answers,
+        generate a random project, and run the two games yourself.
       </DemoHeader>
 
       {/* Practice toolbar */}
@@ -182,7 +276,7 @@ export default function Ch7ProjectManagement() {
           Create a random problem
         </button>
         <button
-          onClick={() => void downloadWorksheet(activities)}
+          onClick={() => void downloadWorksheet(activeInputs)}
           className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
         >
           Download worksheet (PDF)
@@ -202,7 +296,7 @@ export default function Ch7ProjectManagement() {
         )}
       </div>
 
-      {/* Activity editor */}
+      {/* Activity table editor */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -210,139 +304,181 @@ export default function Ch7ProjectManagement() {
               The activities
             </h2>
             <p className="max-w-3xl text-sm text-stone-600">
-              Set each activity&rsquo;s estimated time, and click the letter
-              chips to choose which activities must finish first (its
-              immediate predecessors). No predecessors means it starts right
-              at Start.
+              Click a cell and type — descriptions, durations, and
+              predecessors (letters separated by commas). The eye hides an
+              activity from the project without losing its row: hide
+              everything off the critical path and study the skeleton, then
+              bring them back.
             </p>
           </div>
-          <button
-            onClick={addActivity}
-            disabled={activities.length >= 26}
-            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-          >
-            + Add activity
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={hideNonCritical}
+              disabled={!showAnswers || !anyNonCriticalVisible}
+              title={
+                !showAnswers
+                  ? 'Reveal the answers first — hiding needs to know which activities are critical'
+                  : 'Hide every visible activity that is not on the critical path'
+              }
+              className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+            >
+              Hide non-critical
+            </button>
+            <button
+              onClick={showAll}
+              disabled={!anyHidden}
+              className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+            >
+              Show all
+            </button>
+          </div>
         </div>
-        <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-          {schedule.activities.map((a) => {
-            const pinned =
-              isClassStructure &&
-              CRASH_OPTIONS.some((o) => o.id === a.id && crashed[o.id])
-            const blocked = descendantsOf(activities, a.id)
-            return (
-              <div key={a.id} className="rounded-lg border border-stone-100 p-2.5">
-                <div className="mb-0.5 flex items-baseline justify-between gap-2 text-sm">
-                  <span className="flex min-w-0 items-baseline gap-1.5">
-                    <span
-                      className="inline-block h-2 w-2 shrink-0 self-center rounded-full"
-                      style={{
-                        backgroundColor:
-                          showAnswers && a.critical ? COLOR_CRITICAL : 'transparent',
-                        border:
-                          showAnswers && a.critical
-                            ? 'none'
-                            : `1.5px solid ${COLOR_MUTED}`,
-                      }}
-                    />
-                    <span className="font-semibold text-stone-800">{a.id}</span>
-                    {a.name && (
-                      <span className="truncate text-stone-500" title={a.name}>
-                        {a.name}
-                      </span>
-                    )}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-2 text-stone-600 tabular-nums">
-                    {pinned ? (
-                      <span className="rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800">
-                        crashed → {a.duration} wk
-                      </span>
-                    ) : (
-                      `${a.duration} wk`
-                    )}
-                    <button
-                      onClick={() => removeActivity(a.id)}
-                      disabled={activities.length <= 1}
-                      aria-label={`Remove activity ${a.id}`}
-                      title={`Remove activity ${a.id}`}
-                      className="h-5 w-5 rounded text-stone-400 hover:bg-stone-100 hover:text-stone-700 disabled:opacity-30"
-                    >
-                      ×
-                    </button>
-                  </span>
-                </div>
-                <div className="mb-1.5 flex items-center gap-1.5">
-                  <button
-                    onClick={() => setDuration(a.id, durationOf(a.id) - 1)}
-                    disabled={pinned || durationOf(a.id) <= MIN_DUR}
-                    aria-label={`Decrease ${a.id} by one week`}
-                    className="h-6 w-6 shrink-0 rounded border border-stone-300 text-sm leading-none text-stone-600 hover:bg-stone-50 disabled:opacity-40"
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-130 text-sm">
+            <thead>
+              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                <th className="w-9 py-2" aria-label="Visibility" />
+                <th className="w-16 py-2 pr-2 font-semibold">Activity</th>
+                <th className="py-2 pr-2 font-semibold">Description</th>
+                <th className="w-28 py-2 pr-2 font-semibold">Duration (wks)</th>
+                <th className="w-40 py-2 pr-2 font-semibold">Predecessor(s)</th>
+                <th className="w-9 py-2" aria-label="Delete row" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const scheduled = schedule.byId[r.id]
+                const critical = showAnswers && !r.hidden && !!scheduled?.critical
+                const pinned =
+                  isClassStructure &&
+                  !r.hidden &&
+                  CRASH_OPTIONS.some((o) => o.id === r.id && crashed[o.id])
+                const draft = predDrafts[r.id]
+                const predText = draft ?? r.predecessors.join(', ')
+                const predInvalid =
+                  draft !== undefined && parsePreds(r.id, draft) === null
+                const lastVisible = !r.hidden && visibleIds.size <= 1
+                return (
+                  <tr
+                    key={r.id}
+                    className={[
+                      'border-b border-stone-100 last:border-0',
+                      r.hidden ? 'opacity-45' : '',
+                      critical ? 'bg-garnet-50/60' : '',
+                    ].join(' ')}
                   >
-                    −
-                  </button>
-                  <input
-                    type="range"
-                    min={MIN_DUR}
-                    max={MAX_DUR}
-                    step={1}
-                    value={durationOf(a.id)}
-                    disabled={pinned}
-                    onChange={(e) => setDuration(a.id, Number(e.target.value))}
-                    className="w-full accent-garnet-700 disabled:opacity-40"
-                    aria-label={`Estimated time for activity ${a.id}`}
-                  />
-                  <button
-                    onClick={() => setDuration(a.id, durationOf(a.id) + 1)}
-                    disabled={pinned || durationOf(a.id) >= MAX_DUR}
-                    aria-label={`Increase ${a.id} by one week`}
-                    className="h-6 w-6 shrink-0 rounded border border-stone-300 text-sm leading-none text-stone-600 hover:bg-stone-50 disabled:opacity-40"
-                  >
-                    +
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-1">
-                  <span className="mr-0.5 text-[10px] text-stone-400 uppercase">
-                    after:
-                  </span>
-                  {activities
-                    .filter((other) => other.id !== a.id)
-                    .map((other) => {
-                      const selected = a.predecessors.includes(other.id)
-                      const wouldCycle = !selected && blocked.has(other.id)
-                      return (
-                        <button
-                          key={other.id}
-                          onClick={() => togglePredecessor(a.id, other.id)}
-                          disabled={wouldCycle}
-                          title={
-                            wouldCycle
-                              ? `${other.id} comes after ${a.id} — picking it would create a cycle`
-                              : selected
-                                ? `Remove ${other.id} as a predecessor of ${a.id}`
-                                : `Make ${other.id} a predecessor of ${a.id}`
-                          }
-                          className={[
-                            'h-5 min-w-5 rounded px-1 text-[11px] font-semibold transition-colors',
-                            selected
-                              ? 'bg-garnet-800 text-white'
-                              : wouldCycle
-                                ? 'bg-stone-50 text-stone-300'
-                                : 'bg-stone-100 text-stone-600 hover:bg-stone-200',
-                          ].join(' ')}
+                    <td className="py-1">
+                      <button
+                        onClick={() => toggleHidden(r.id)}
+                        disabled={lastVisible}
+                        title={
+                          lastVisible
+                            ? 'At least one activity must stay visible'
+                            : r.hidden
+                              ? `Show ${r.id} again`
+                              : `Hide ${r.id} from the project (keeps the row)`
+                        }
+                        aria-label={r.hidden ? `Show activity ${r.id}` : `Hide activity ${r.id}`}
+                        className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 disabled:opacity-30"
+                      >
+                        <EyeIcon open={!r.hidden} />
+                      </button>
+                    </td>
+                    <td className="py-1 pr-2">
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className="inline-block h-2 w-2 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor: critical ? COLOR_CRITICAL : 'transparent',
+                            border: critical ? 'none' : `1.5px solid ${COLOR_MUTED}`,
+                          }}
+                        />
+                        <span className="font-semibold text-stone-800">{r.id}</span>
+                      </span>
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input
+                        type="text"
+                        value={r.name}
+                        placeholder="(description)"
+                        onChange={(e) => patchRow(r.id, { name: e.target.value })}
+                        aria-label={`Description for activity ${r.id}`}
+                        className={CELL_INPUT}
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      {pinned ? (
+                        <span
+                          className="rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800"
+                          title="Pinned by the crash toggle below — uncheck it to edit"
                         >
-                          {other.id}
-                        </button>
-                      )
-                    })}
-                  {a.predecessors.length === 0 && (
-                    <span className="text-[10px] text-stone-400">
-                      (starts at Start)
-                    </span>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+                          crashed → {schedule.byId[r.id].duration}
+                        </span>
+                      ) : (
+                        <input
+                          type="number"
+                          min={MIN_DUR}
+                          max={MAX_DUR}
+                          value={r.duration}
+                          onChange={(e) => setDuration(r.id, Number(e.target.value))}
+                          aria-label={`Duration for activity ${r.id}, weeks`}
+                          className={`${CELL_INPUT} tabular-nums`}
+                        />
+                      )}
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input
+                        type="text"
+                        value={predText}
+                        placeholder="— (starts at Start)"
+                        onChange={(e) => onPredsChange(r.id, e.target.value)}
+                        onBlur={() => onPredsBlur(r.id)}
+                        title={
+                          predInvalid
+                            ? 'Only existing letters, no cycles — e.g. "B, D"'
+                            : 'Letters separated by commas, e.g. "B, D"'
+                        }
+                        aria-label={`Predecessors for activity ${r.id}`}
+                        aria-invalid={predInvalid}
+                        className={[
+                          CELL_INPUT,
+                          predInvalid
+                            ? 'border-red-400 bg-red-50 focus:border-red-500'
+                            : '',
+                        ].join(' ')}
+                      />
+                    </td>
+                    <td className="py-1">
+                      <button
+                        onClick={() => deleteRow(r.id)}
+                        disabled={rows.length <= 1 || lastVisible}
+                        title={`Delete row ${r.id} permanently (use the eye to hide instead)`}
+                        aria-label={`Delete activity ${r.id}`}
+                        className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700 disabled:opacity-30"
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2 flex items-center justify-between">
+          <button
+            onClick={addRow}
+            disabled={rows.length >= 26}
+            className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-40"
+          >
+            + Add row
+          </button>
+          {anyHidden && (
+            <span className="text-xs text-stone-500">
+              {rows.filter((r) => r.hidden).length} hidden — the network,
+              table, and Gantt below use only the visible activities.
+            </span>
+          )}
         </div>
       </div>
 
@@ -518,6 +654,7 @@ export default function Ch7ProjectManagement() {
               const weeksSaved = baseline.projectDuration - withOnly
               const extraCost = o.crashCost - o.normalCost
               const active = !!crashed[o.id]
+              const rowDuration = rows.find((r) => r.id === o.id)!.duration
               return (
                 <label
                   key={o.id}
@@ -576,10 +713,10 @@ export default function Ch7ProjectManagement() {
                       <strong>no reduction in project time</strong>
                     )}
                   </div>
-                  {durationOf(o.id) !== o.normalTime && (
+                  {rowDuration !== o.normalTime && (
                     <div className="mt-2 text-xs text-amber-700">
-                      Your slider has {o.id} at {durationOf(o.id)} wks; the
-                      class example crashes it from {o.normalTime}.
+                      Your table has {o.id} at {rowDuration} wks; the class
+                      example crashes it from {o.normalTime}.
                     </div>
                   )}
                 </label>
@@ -645,6 +782,12 @@ export default function Ch7ProjectManagement() {
           <h2 className="mb-2 font-semibold text-stone-900">Try this</h2>
           <ul className="list-disc space-y-1.5 pl-5 text-stone-600">
             <li>
+              Hit <strong>Hide non-critical</strong>. The project collapses
+              to the B–D–H–J–K skeleton and the duration stays 69 weeks — the
+              other six activities truly do not set the finish date. Then{' '}
+              <strong>Show all</strong> and stretch F until it does.
+            </li>
+            <li>
               In the Gantt chart, drag F anywhere in its 41-week window —
               early, late, it never matters. Then try to drag H. It
               won&rsquo;t budge: zero slack.
@@ -658,11 +801,6 @@ export default function Ch7ProjectManagement() {
               Add one week to H (Construct hospital, slack 0). The project
               instantly slips to 70 weeks. Now stretch F to 52 and the
               critical path <em>shifts</em> to A–F–K.
-            </li>
-            <li>
-              Rewire the project: make E a predecessor of K instead of J, or
-              add a new activity L after G, and see how the network redraws
-              and the critical path reacts.
             </li>
             <li>
               Hit &ldquo;Create a random problem&rdquo;, download the
