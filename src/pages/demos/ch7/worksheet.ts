@@ -125,11 +125,11 @@ export async function downloadWorksheet(activities: ActivityInput[]) {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
     doc.setTextColor(BLACK)
-    doc.text(a.id, cx - 4 * scale, cy + 3.5)
+    doc.text(a.id, cx, cy + 1, { align: 'center' })
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
+    doc.setFontSize(7.5)
     doc.setTextColor(90)
-    doc.text(`${a.duration} wk`, cx + 6 * scale, cy + 3.5)
+    doc.text(String(a.duration), cx, cy + 9, { align: 'center' })
   }
 
   // corner-cell key

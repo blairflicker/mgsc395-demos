@@ -150,17 +150,17 @@ function ActivityNode({
         // blank cells for students to fill in
         <>
           {[
-            { cx: x - 28, cy: y - 21 },
-            { cx: x + 28, cy: y - 21 },
-            { cx: x - 28, cy: y + 21 },
-            { cx: x + 28, cy: y + 21 },
+            { cx: x - 29, cy: y - 20 },
+            { cx: x + 29, cy: y - 20 },
+            { cx: x - 29, cy: y + 20 },
+            { cx: x + 29, cy: y + 20 },
           ].map((c, i) => (
             <rect
               key={i}
-              x={c.cx - 13}
-              y={c.cy - 6}
-              width={26}
-              height={12}
+              x={c.cx - 15}
+              y={c.cy - 7.5}
+              width={30}
+              height={15}
               rx={2}
               fill="white"
               stroke={GRID}
@@ -170,27 +170,39 @@ function ActivityNode({
         </>
       ) : (
         <>
-          <text x={x - 38} y={y - 18} fontSize="10" fill={cornerInk} className="tabular-nums">
+          <text x={x - 39} y={y - 15} fontSize="14" fill={cornerInk} className="tabular-nums">
             {a.est}
           </text>
-          <text x={x + 38} y={y - 18} fontSize="10" fill={cornerInk} textAnchor="end" className="tabular-nums">
+          <text x={x + 39} y={y - 15} fontSize="14" fill={cornerInk} textAnchor="end" className="tabular-nums">
             {a.eft}
           </text>
-          <text x={x - 38} y={y + 25} fontSize="10" fill={cornerInk} className="tabular-nums">
+          <text x={x - 39} y={y + 26} fontSize="14" fill={cornerInk} className="tabular-nums">
             {a.lst}
           </text>
-          <text x={x + 38} y={y + 25} fontSize="10" fill={cornerInk} textAnchor="end" className="tabular-nums">
+          <text x={x + 39} y={y + 26} fontSize="14" fill={cornerInk} textAnchor="end" className="tabular-nums">
             {a.lft}
           </text>
         </>
       )}
-      <text x={x} y={y + 5} textAnchor="middle" fill={crit ? INK : INK_MUTED}>
-        <tspan fontSize="15" fontWeight="700">
-          {a.id}
-        </tspan>
-        <tspan fontSize="9" dx="5" fill={INK_MUTED}>
-          {a.duration} wk
-        </tspan>
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        fontSize="15"
+        fontWeight="700"
+        fill={crit ? INK : INK_MUTED}
+      >
+        {a.id}
+      </text>
+      <text
+        x={x}
+        y={y + 13}
+        textAnchor="middle"
+        fontSize="10"
+        fill={INK_MUTED}
+        className="tabular-nums"
+      >
+        {a.duration}
       </text>
     </g>
   )
@@ -228,12 +240,15 @@ function KeyNode() {
   return (
     <svg viewBox="0 0 150 66" width="150" height="66" aria-hidden>
       <rect x="29" y="3" width="92" height="60" rx="10" fill="white" stroke={COLOR_MUTED_STROKE} strokeWidth="1.5" />
-      <text x="37" y="17" fontSize="9" fill={INK_MUTED}>EST</text>
-      <text x="113" y="17" fontSize="9" fill={INK_MUTED} textAnchor="end">EFT</text>
-      <text x="37" y="55" fontSize="9" fill={INK_MUTED}>LST</text>
-      <text x="113" y="55" fontSize="9" fill={INK_MUTED} textAnchor="end">LFT</text>
-      <text x="75" y="37" textAnchor="middle" fontSize="10" fontWeight="600" fill={INK_SOFT}>
-        Activity · wks
+      <text x="36" y="18" fontSize="10" fill={INK_MUTED}>EST</text>
+      <text x="114" y="18" fontSize="10" fill={INK_MUTED} textAnchor="end">EFT</text>
+      <text x="36" y="56" fontSize="10" fill={INK_MUTED}>LST</text>
+      <text x="114" y="56" fontSize="10" fill={INK_MUTED} textAnchor="end">LFT</text>
+      <text x="75" y="32" textAnchor="middle" fontSize="10" fontWeight="600" fill={INK_SOFT}>
+        Activity
+      </text>
+      <text x="75" y="44" textAnchor="middle" fontSize="8.5" fill={INK_MUTED}>
+        weeks
       </text>
     </svg>
   )
