@@ -54,8 +54,8 @@ export const Stage = memo(function Stage({
 
   const serverX = width - 72 // center of the server ring
   const queueHeadX = serverX - 64 // queue position 0 (front of the line)
-  const minX = 24
-  const laneY = 160 // row 0 (front row) vertical center
+  const minX = 42 // left turn-around point — clear of the band's left border
+  const laneY = 164 // row 0 (front row) vertical center
   const slotsPerRow = Math.max(1, Math.floor((queueHeadX - minX) / SLOT_GAP) + 1)
   const visibleCap = slotsPerRow * MAX_ROWS
   const exitX = width + 48
@@ -78,7 +78,7 @@ export const Stage = memo(function Stage({
   return (
     <div
       ref={containerRef}
-      className="relative h-52 overflow-hidden rounded-xl border border-stone-200 bg-white"
+      className="relative h-56 overflow-hidden rounded-xl border border-stone-200 bg-white"
     >
       {/* the-system band: everyone inside counts toward L */}
       <div
