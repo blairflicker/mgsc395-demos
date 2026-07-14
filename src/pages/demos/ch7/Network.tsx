@@ -254,11 +254,15 @@ function KeyNode() {
 export const Network = memo(function Network({
   schedule,
   hideAnswers = false,
+  hiddenIds,
   overrides,
   onMove,
 }: {
   schedule: CpmSchedule
   hideAnswers?: boolean
+  /** activities hidden from the DIAGRAM only — the layout is computed from
+   *  the full project so nothing shifts as activities hide and show */
+  hiddenIds?: Set<string>
   /** user-dragged node centers, keyed by activity id */
   overrides: Record<string, LayoutPoint>
   onMove: (id: string, pos: LayoutPoint) => void
@@ -275,7 +279,15 @@ export const Network = memo(function Network({
       ),
     }
   }, [schedule, overrides])
-  const edges = useMemo(() => buildEdges(schedule, layout), [schedule, layout])
+  const allEdges = useMemo(() => buildEdges(schedule, layout), [schedule, layout])
+
+  const isHidden = (id: string) => !!hiddenIds?.has(id)
+  const edges = allEdges.filter(
+    (e) =>
+      (e.from === 'START' || !isHidden(e.from)) &&
+      (e.to === 'FINISH' || !isHidden(e.to)),
+  )
+  const visibleActivities = schedule.activities.filter((a) => !isHidden(a.id))
 
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null)
@@ -391,7 +403,7 @@ export const Network = memo(function Network({
               ))}
           <Pill at={layout.start} label="Start" />
           <Pill at={layout.finish} label="Finish" />
-          {schedule.activities.map((a) => (
+          {visibleActivities.map((a) => (
             <ActivityNode
               key={a.id}
               a={a}
