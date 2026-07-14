@@ -175,6 +175,151 @@ export const DEFAULT_DURATIONS: Record<string, number> = Object.fromEntries(
   ST_JOHNS.map((a) => [a.id, a.duration]),
 )
 
+/** Every id reachable downstream of `id` (used to forbid cyclic predecessor picks). */
+export function descendantsOf(inputs: ActivityInput[], id: string): Set<string> {
+  const successors: Record<string, string[]> = {}
+  for (const a of inputs) {
+    for (const p of a.predecessors) (successors[p] ??= []).push(a.id)
+  }
+  const out = new Set<string>()
+  const stack = [id]
+  while (stack.length > 0) {
+    const current = stack.pop()!
+    for (const s of successors[current] ?? []) {
+      if (!out.has(s)) {
+        out.add(s)
+        stack.push(s)
+      }
+    }
+  }
+  return out
+}
+
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+/** Next unused single-letter id, or null when all 26 are taken. */
+export function nextActivityId(inputs: ActivityInput[]): string | null {
+  const used = new Set(inputs.map((a) => a.id))
+  for (const ch of LETTERS) if (!used.has(ch)) return ch
+  return null
+}
+
+/**
+ * A random practice project: 7–9 activities in 3–4 precedence layers,
+ * each later activity following one or two earlier ones. Always a DAG,
+ * letters always in topological order (like the textbook's problems).
+ */
+export function randomProject(): ActivityInput[] {
+  const n = 7 + Math.floor(Math.random() * 3)
+  const nLayers = 3 + Math.floor(Math.random() * 2)
+  const layerOf: number[] = []
+  for (let i = 0; i < n; i++) {
+    layerOf.push(i < nLayers ? i : 1 + Math.floor(Math.random() * (nLayers - 1)))
+  }
+  layerOf.sort((a, b) => a - b)
+
+  const ids = LETTERS.slice(0, n).split('')
+  const activities: ActivityInput[] = ids.map((id) => ({
+    id,
+    name: '',
+    predecessors: [],
+    duration: 2 + Math.floor(Math.random() * 14),
+  }))
+  const indices = Array.from({ length: n }, (_, i) => i)
+  for (let i = 0; i < n; i++) {
+    if (layerOf[i] === 0) continue
+    const previousLayer = indices.filter((j) => layerOf[j] === layerOf[i] - 1)
+    const anyEarlier = indices.filter((j) => layerOf[j] < layerOf[i])
+    const preds = new Set<number>()
+    preds.add(previousLayer[Math.floor(Math.random() * previousLayer.length)])
+    if (anyEarlier.length > 1 && Math.random() < 0.45) {
+      preds.add(anyEarlier[Math.floor(Math.random() * anyEarlier.length)])
+    }
+    activities[i].predecessors = [...preds].map((j) => ids[j]).sort()
+  }
+  return activities
+}
+
+export interface LayoutPoint {
+  x: number
+  y: number
+}
+
+export interface NetworkLayout {
+  /** activity centers, keyed by id */
+  pos: Record<string, LayoutPoint>
+  start: LayoutPoint
+  finish: LayoutPoint
+  width: number
+  height: number
+}
+
+/**
+ * Automatic left-to-right layered layout for an arbitrary project DAG.
+ * Layer = longest chain of predecessors; within a layer, nodes are ordered
+ * by the average vertical position of their predecessors to limit arrow
+ * crossings. Shared by the on-screen network and the PDF worksheet.
+ */
+export function layoutNetwork(inputs: ActivityInput[]): NetworkLayout {
+  const byId = Object.fromEntries(inputs.map((a) => [a.id, a]))
+  const layerOf: Record<string, number> = {}
+  const layerFor = (id: string): number => {
+    if (layerOf[id] !== undefined) return layerOf[id]
+    const a = byId[id]
+    layerOf[id] =
+      a.predecessors.length > 0
+        ? 1 + Math.max(...a.predecessors.map(layerFor))
+        : 0
+    return layerOf[id]
+  }
+  for (const a of inputs) layerFor(a.id)
+
+  const nLayers = 1 + Math.max(0, ...Object.values(layerOf))
+  const layers: string[][] = Array.from({ length: nLayers }, () => [])
+  for (const a of inputs) layers[layerOf[a.id]].push(a.id)
+
+  const maxRows = Math.max(...layers.map((l) => l.length))
+  const COL_GAP = 165
+  const X0 = 190
+  const width = X0 + (nLayers - 1) * COL_GAP + 135
+  const height = Math.max(300, maxRows * 84 + 72)
+
+  const pos: Record<string, LayoutPoint> = {}
+  const yFor = (index: number, count: number) =>
+    36 + ((index + 0.5) * (height - 72)) / count
+
+  layers.forEach((ids, li) => {
+    const x = X0 + li * COL_GAP
+    if (li > 0) {
+      // barycenter ordering: follow the average y of predecessors
+      const key = (id: string) => {
+        const preds = byId[id].predecessors
+        if (preds.length === 0) return height / 2
+        return preds.reduce((sum, p) => sum + (pos[p]?.y ?? height / 2), 0) / preds.length
+      }
+      ids.sort((a, b) => key(a) - key(b))
+    }
+    ids.forEach((id, i) => {
+      pos[id] = { x, y: yFor(i, ids.length) }
+    })
+  })
+
+  const hasSuccessor = new Set(inputs.flatMap((a) => a.predecessors))
+  const sinks = inputs.filter((a) => !hasSuccessor.has(a.id))
+  const finishY =
+    sinks.length > 0
+      ? sinks.reduce((sum, a) => sum + pos[a.id].y, 0) / sinks.length
+      : height / 2
+
+  return {
+    pos,
+    start: { x: 55, y: height / 2 },
+    finish: { x: width - 55, y: finishY },
+    width,
+    height,
+  }
+}
+
 /** One crashing opportunity from the slides' cost-time trade-off example. */
 export interface CrashOption {
   /** id of the activity that can be crashed */
