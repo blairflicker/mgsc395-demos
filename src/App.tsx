@@ -4,6 +4,7 @@ import Launcher from './pages/Launcher'
 import ComingSoon from './pages/ComingSoon'
 import SuppBWaitingLines from './pages/demos/supp-b'
 import Ch7ProjectManagement from './pages/demos/ch7'
+import Ch13FacilityLocation from './pages/demos/ch13'
 
 /**
  * Demo pages register here as they are built: import the page component
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/" element={<Launcher />} />
           <Route path="/supp-b" element={<SuppBWaitingLines />} />
           <Route path="/ch7" element={<Ch7ProjectManagement />} />
+          <Route path="/ch13" element={<Ch13FacilityLocation />} />
           <Route path="/:slug" element={<ComingSoon />} />
         </Routes>
       </Layout>

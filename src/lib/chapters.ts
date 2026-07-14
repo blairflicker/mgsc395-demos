@@ -141,7 +141,7 @@ export const chapters: Chapter[] = [
     title: 'Supply Chain Networks',
     description:
       'Facility location — center of gravity, load-distance scores, and comparing candidate sites.',
-    status: 'coming-soon',
+    status: 'available',
     exam: 3,
   },
 ]
