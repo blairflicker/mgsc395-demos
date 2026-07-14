@@ -227,6 +227,12 @@ export class MM1Sim {
     }
   }
 
+  /** Running time-average of N for the current stats epoch (cheap; no allocations). */
+  lObsNow(): number | null {
+    const elapsed = this.t - this.statsStart
+    return elapsed > 0 ? this.areaN / elapsed : null
+  }
+
   snapshot(): Snapshot {
     const elapsed = this.t - this.statsStart
     const d = this.statsDepartures

@@ -8,17 +8,25 @@ import {
   COLOR_SYSTEM,
   COLOR_W,
   DurationHistogram,
+  LOverTimeChart,
   StateDistribution,
+  type LSample,
 } from './charts'
 
 const SPEEDS = [0.5, 1, 2, 5, 15, 60]
 /** at 1× playback, one real second = one sim-minute */
 const BASE_SIM_HOURS_PER_REAL_SECOND = 1 / 60
 const DEPART_ANIMATION_MS = 600
-/** only this many waiting customers are handed to the Stage — the rest are
- *  summarized by the "+N more" chip, keeping per-frame work bounded when
- *  the system is unstable and the queue grows into the thousands */
-const STAGE_QUEUE_CAP = 60
+/** only this many waiting customers are handed to the Stage — enough to
+ *  fill the serpentine rows; the rest are summarized by the "+N more"
+ *  chip, keeping per-frame work bounded when the system is unstable and
+ *  the queue grows into the thousands */
+const STAGE_QUEUE_CAP = 200
+/** L-over-time sampling: initial spacing between samples (sim-hours);
+ *  the buffer decimates and doubles the spacing past this many points,
+ *  so it always spans the whole run with bounded memory */
+const L_SAMPLE_INTERVAL_H = 1 / 120
+const L_HISTORY_MAX_POINTS = 1440
 
 function fmt(x: number | null | undefined, digits = 2): string {
   if (x === null || x === undefined || !Number.isFinite(x)) return '—'
@@ -41,6 +49,7 @@ export default function SuppBWaitingLines() {
   const [speed, setSpeed] = useState(1)
   const [running, setRunning] = useState(true)
   const [stats, setStats] = useState<Snapshot | null>(null)
+  const [historySnap, setHistorySnap] = useState<LSample[]>([])
   const [, frameTick] = useReducer((x: number) => x + 1, 0)
 
   const simRef = useRef<MM1Sim | null>(null)
@@ -48,6 +57,8 @@ export default function SuppBWaitingLines() {
   const speedRef = useRef(speed)
   speedRef.current = speed
   const departingRef = useRef<{ id: number; realAt: number }[]>([])
+  const historyRef = useRef<LSample[]>([])
+  const samplerRef = useRef({ interval: L_SAMPLE_INTERVAL_H, nextAt: 0 })
 
   useEffect(() => {
     document.title = 'Waiting Lines · MGSC 395'
@@ -65,12 +76,24 @@ export default function SuppBWaitingLines() {
       // clamp so a backgrounded tab doesn't fast-forward on return
       const dtReal = Math.min((now - last) / 1000, 0.1)
       last = now
-      const events = simRef.current!.advance(
+      const sim = simRef.current!
+      const events = sim.advance(
         dtReal * speedRef.current * BASE_SIM_HOURS_PER_REAL_SECOND,
       )
       for (const e of events) {
         if (e.type === 'departure') {
           departingRef.current.push({ id: e.id, realAt: now })
+        }
+      }
+      // sample L history; decimate + widen spacing so the buffer always
+      // covers the whole run with bounded memory
+      const sampler = samplerRef.current
+      if (sim.t >= sampler.nextAt) {
+        historyRef.current.push({ t: sim.t, n: sim.n, lRun: sim.lObsNow() })
+        sampler.nextAt = sim.t + sampler.interval
+        if (historyRef.current.length > L_HISTORY_MAX_POINTS) {
+          historyRef.current = historyRef.current.filter((_, i) => i % 2 === 0)
+          sampler.interval *= 2
         }
       }
       departingRef.current = departingRef.current
@@ -87,9 +110,11 @@ export default function SuppBWaitingLines() {
   // (dial changes and reset push a fresh snapshot themselves)
   useEffect(() => {
     setStats(simRef.current!.snapshot())
+    setHistorySnap(historyRef.current.slice())
     if (!running) return
     const interval = setInterval(() => {
       setStats(simRef.current!.snapshot())
+      setHistorySnap(historyRef.current.slice())
     }, 250)
     return () => clearInterval(interval)
   }, [running])
@@ -97,19 +122,31 @@ export default function SuppBWaitingLines() {
   const reset = () => {
     simRef.current = new MM1Sim(lambda, mu)
     departingRef.current = []
+    historyRef.current = []
+    samplerRef.current = { interval: L_SAMPLE_INTERVAL_H, nextAt: 0 }
     setStats(simRef.current.snapshot())
+    setHistorySnap([])
     frameTick()
+  }
+
+  /** a null-lRun marker makes the running-average line break cleanly at
+   *  the dial change instead of drawing a steep false drop */
+  const markEpoch = () => {
+    const sim = simRef.current!
+    historyRef.current.push({ t: sim.t, n: sim.n, lRun: null })
+    setStats(sim.snapshot())
+    setHistorySnap(historyRef.current.slice())
   }
 
   const changeLambda = (v: number) => {
     setLambda(v)
     simRef.current!.setLambda(v)
-    setStats(simRef.current!.snapshot())
+    markEpoch()
   }
   const changeMu = (v: number) => {
     setMu(v)
     simRef.current!.setMu(v)
-    setStats(simRef.current!.snapshot())
+    markEpoch()
   }
 
   const sim = simRef.current
@@ -255,11 +292,28 @@ export default function SuppBWaitingLines() {
       )}
 
       {/* Animated stage */}
-      <div className="mb-6">
+      <div className="mb-4">
         <Stage
           customers={stageCustomers}
           serverBusy={sim.inService !== null}
           queueLength={sim.queue.length}
+        />
+      </div>
+
+      {/* L over time */}
+      <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
+        <h2 className="mb-1 text-lg font-semibold text-stone-900">
+          L over time
+        </h2>
+        <p className="mb-3 max-w-3xl text-sm text-stone-600">
+          The number in the system jumps around moment to moment, but its
+          running average settles down toward the theoretical L — the same
+          story the animation tells, drawn since the start of the run.
+        </p>
+        <LOverTimeChart
+          history={historySnap}
+          theoryL={theory.stable ? theory.l : null}
+          simT={s?.t ?? 0}
         />
       </div>
 

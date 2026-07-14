@@ -70,6 +70,200 @@ function LegendRow({
   )
 }
 
+export interface LSample {
+  /** sim-hours */
+  t: number
+  /** customers in system at that instant */
+  n: number
+  /** running time-average L for the stats epoch, or null right after a dial change */
+  lRun: number | null
+}
+
+/**
+ * L over time: the instantaneous number in system (light trace), its
+ * running time-average (bold), and the theoretical L as a dashed
+ * reference. The x-axis always spans the full simulation history.
+ */
+export const LOverTimeChart = memo(function LOverTimeChart({
+  history,
+  theoryL,
+  simT,
+}: {
+  history: LSample[]
+  /** theoretical L for the current dials, or null when unstable */
+  theoryL: number | null
+  simT: number
+}) {
+  const vw = 640
+  const vh = 180
+  const m = { top: 10, right: 66, bottom: 22, left: 34 }
+  const plotW = vw - m.left - m.right
+  const plotH = vh - m.top - m.bottom
+
+  const lastT = history.length > 0 ? history[history.length - 1].t : 0
+  const tMax = Math.max(simT, lastT, 1 / 60)
+  let nMax = 0
+  for (const p of history) if (p.n > nMax) nMax = p.n
+  const yMax = Math.max(nMax, theoryL ?? 0, 2) * 1.1
+
+  const xPos = (t: number) => m.left + (t / tMax) * plotW
+  const yPos = (v: number) => m.top + plotH - (v / yMax) * plotH
+
+  const toPath = (pts: { x: number; y: number }[]) =>
+    pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('')
+
+  const nPath = toPath(history.map((p) => ({ x: xPos(p.t), y: yPos(p.n) })))
+  // the running average breaks at dial changes (lRun resets to null)
+  const lRunSegments: string[] = []
+  let seg: { x: number; y: number }[] = []
+  for (const p of history) {
+    if (p.lRun === null) {
+      if (seg.length > 1) lRunSegments.push(toPath(seg))
+      seg = []
+    } else {
+      seg.push({ x: xPos(p.t), y: yPos(Math.min(p.lRun, yMax)) })
+    }
+  }
+  if (seg.length > 1) lRunSegments.push(toPath(seg))
+
+  // x ticks: 4 round-ish time marks
+  const xTicks = [0.25, 0.5, 0.75, 1].map((f) => f * tMax)
+  const fmtT = (h: number) =>
+    h < 1 ? `${Math.round(h * 60)}m` : `${Math.floor(h)}h${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
+  // y ticks: ~3 integer marks
+  const yStep = Math.max(1, Math.ceil(yMax / 3))
+  const yTicks: number[] = []
+  for (let v = yStep; v < yMax; v += yStep) yTicks.push(v)
+
+  return (
+    <div>
+      <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+        <span className="flex items-center gap-1.5">
+          <svg width="18" height="6" aria-hidden>
+            <line x1="0" y1="3" x2="18" y2="3" stroke="#eda0af" strokeWidth="2" />
+          </svg>
+          In system now, n(t)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <svg width="18" height="6" aria-hidden>
+            <line x1="0" y1="3" x2="18" y2="3" stroke={COLOR_SYSTEM} strokeWidth="2.5" />
+          </svg>
+          Running average L (since last dial change)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <svg width="18" height="6" aria-hidden>
+            <line
+              x1="0"
+              y1="3"
+              x2="18"
+              y2="3"
+              stroke={COLOR_THEORY}
+              strokeWidth="2"
+              strokeDasharray="4 3"
+            />
+          </svg>
+          Theory L
+        </span>
+      </div>
+      <svg
+        viewBox={`0 0 ${vw} ${vh}`}
+        className="w-full"
+        role="img"
+        aria-label="Number of customers in the system over time"
+      >
+        {yTicks.map((v) => (
+          <g key={v}>
+            <line
+              x1={m.left}
+              y1={yPos(v)}
+              x2={m.left + plotW}
+              y2={yPos(v)}
+              stroke={GRID}
+              strokeWidth="1"
+            />
+            <text
+              x={m.left - 6}
+              y={yPos(v) + 3}
+              textAnchor="end"
+              fontSize="10"
+              fill={INK_MUTED}
+            >
+              {v}
+            </text>
+          </g>
+        ))}
+        <line
+          x1={m.left}
+          y1={m.top + plotH}
+          x2={m.left + plotW}
+          y2={m.top + plotH}
+          stroke={GRID}
+          strokeWidth="1"
+        />
+        {history.length > 1 && (
+          <path d={nPath} fill="none" stroke="#eda0af" strokeWidth="1.5" />
+        )}
+        {lRunSegments.map((d, i) => (
+          <path key={i} d={d} fill="none" stroke={COLOR_SYSTEM} strokeWidth="2.5" />
+        ))}
+        {theoryL !== null && theoryL <= yMax && (
+          <>
+            <line
+              x1={m.left}
+              y1={yPos(theoryL)}
+              x2={m.left + plotW}
+              y2={yPos(theoryL)}
+              stroke={COLOR_THEORY}
+              strokeWidth="2"
+              strokeDasharray="5 4"
+            />
+            <text
+              x={m.left + plotW + 4}
+              y={yPos(theoryL) + 3}
+              fontSize="10"
+              fill={INK_MUTED}
+            >
+              theory {theoryL.toFixed(2)}
+            </text>
+          </>
+        )}
+        {xTicks.map((t) => (
+          <g key={t}>
+            <line
+              x1={xPos(t)}
+              y1={m.top + plotH}
+              x2={xPos(t)}
+              y2={m.top + plotH + 4}
+              stroke={INK_MUTED}
+              strokeWidth="1"
+            />
+            <text
+              x={xPos(t)}
+              y={m.top + plotH + 16}
+              textAnchor="middle"
+              fontSize="10"
+              fill={INK_MUTED}
+            >
+              {fmtT(t)}
+            </text>
+          </g>
+        ))}
+        {history.length < 3 && (
+          <text
+            x={m.left + plotW / 2}
+            y={m.top + plotH / 2}
+            textAnchor="middle"
+            fontSize="11"
+            fill={INK_MUTED}
+          >
+            collecting observations…
+          </text>
+        )}
+      </svg>
+    </div>
+  )
+})
+
 /**
  * Histogram of observed durations (minutes) with the theoretical
  * exponential density overlaid as a dashed reference curve.

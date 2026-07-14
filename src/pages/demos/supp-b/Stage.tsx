@@ -1,8 +1,20 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { COLOR_LAMBDA, COLOR_SYSTEM } from './charts'
+import { COLOR_LAMBDA } from './charts'
 
 const DOT = 18 // customer dot diameter, px
 const SLOT_GAP = 24 // spacing between queue positions, px
+const ROW_GAP = 28 // vertical spacing between serpentine rows, px
+const MAX_ROWS = 4
+
+/**
+ * Each customer keeps one color for their whole visit (golden-angle hue
+ * from their id), so the eye can follow an individual snaking through
+ * the line, into service, and out the door.
+ */
+export function customerColor(id: number): string {
+  const hue = (id * 137.508) % 360
+  return `hsl(${hue.toFixed(1)} 62% 42%)`
+}
 
 export interface StageCustomer {
   id: number
@@ -13,9 +25,10 @@ export interface StageCustomer {
 
 /**
  * The animated queue lane. Customers are absolutely-positioned dots whose
- * `left` transitions between roles: they pop in at their queue slot, slide
- * forward as the line advances, sit in the server ring while in service,
- * and slide off the right edge when they depart.
+ * position transitions between roles: they pop in at their queue slot,
+ * snake forward through a serpentine line (like a real checkout line —
+ * row 0 nearest the server, doubling back at each wall), sit in the
+ * server ring while in service, and slide off the right edge on departure.
  */
 export const Stage = memo(function Stage({
   customers,
@@ -40,25 +53,32 @@ export const Stage = memo(function Stage({
   }, [])
 
   const serverX = width - 72 // center of the server ring
-  const queueHeadX = serverX - 64 // queue position 0
+  const queueHeadX = serverX - 64 // queue position 0 (front of the line)
   const minX = 24
-  const visibleSlots = Math.max(1, Math.floor((queueHeadX - minX) / SLOT_GAP) + 1)
+  const laneY = 160 // row 0 (front row) vertical center
+  const slotsPerRow = Math.max(1, Math.floor((queueHeadX - minX) / SLOT_GAP) + 1)
+  const visibleCap = slotsPerRow * MAX_ROWS
   const exitX = width + 48
-  const laneY = 96 // vertical center of the lane
 
-  const overflow = Math.max(0, queueLength - visibleSlots)
+  const overflow = Math.max(0, queueLength - visibleCap)
 
-  const xFor = (c: StageCustomer): number => {
-    if (c.role === 'departing') return exitX
-    if (c.role === 'in-service') return serverX
+  const posFor = (c: StageCustomer): { x: number; y: number } => {
+    if (c.role === 'departing') return { x: exitX, y: laneY }
+    if (c.role === 'in-service') return { x: serverX, y: laneY }
     const i = c.queueIndex ?? 0
-    return Math.max(minX, queueHeadX - i * SLOT_GAP)
+    const row = Math.floor(i / slotsPerRow)
+    const slot = i % slotsPerRow
+    // serpentine: even rows run right-to-left (toward the wall), odd rows
+    // double back left-to-right, always contiguous at the turns
+    const x =
+      row % 2 === 0 ? queueHeadX - slot * SLOT_GAP : minX + slot * SLOT_GAP
+    return { x, y: laneY - row * ROW_GAP }
   }
 
   return (
     <div
       ref={containerRef}
-      className="relative h-40 overflow-hidden rounded-xl border border-stone-200 bg-white"
+      className="relative h-52 overflow-hidden rounded-xl border border-stone-200 bg-white"
     >
       {/* the-system band: everyone inside counts toward L */}
       <div
@@ -100,27 +120,28 @@ export const Stage = memo(function Stage({
         {serverBusy ? 'serving' : 'server idle'}
       </span>
 
-      {/* overflow chip when the line is longer than fits on screen */}
+      {/* overflow chip when the line outgrows even the serpentine */}
       {overflow > 0 && (
         <span
           className="absolute rounded-full bg-garnet-800 px-2 py-0.5 text-[11px] font-semibold text-white"
-          style={{ left: minX - 8, top: laneY - 36 }}
+          style={{ right: 30, top: 44 }}
         >
-          +{overflow} more
+          +{overflow.toLocaleString()} more in line
         </span>
       )}
 
       {/* customers */}
       {customers.map((c) => {
-        const hidden = c.role === 'waiting' && (c.queueIndex ?? 0) >= visibleSlots
+        const hidden = c.role === 'waiting' && (c.queueIndex ?? 0) >= visibleCap
         if (hidden) return null
+        const { x, y } = posFor(c)
         return (
           <div
             key={c.id}
-            className="absolute transition-[left,opacity] duration-500 ease-in-out"
+            className="absolute transition-[left,top,opacity] duration-500 ease-in-out"
             style={{
-              left: xFor(c) - DOT / 2,
-              top: laneY - DOT / 2,
+              left: x - DOT / 2,
+              top: y - DOT / 2,
               opacity: c.role === 'departing' ? 0 : 1,
             }}
           >
@@ -129,7 +150,7 @@ export const Stage = memo(function Stage({
               style={{
                 width: DOT,
                 height: DOT,
-                backgroundColor: COLOR_SYSTEM,
+                backgroundColor: customerColor(c.id),
               }}
             />
           </div>
