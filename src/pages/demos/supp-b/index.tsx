@@ -47,7 +47,8 @@ export default function SuppBWaitingLines() {
   const [lambda, setLambda] = useState(30)
   const [mu, setMu] = useState(35)
   const [speed, setSpeed] = useState(1)
-  const [running, setRunning] = useState(true)
+  // starts paused so students can set the dials first, then hit Play
+  const [running, setRunning] = useState(false)
   const [stats, setStats] = useState<Snapshot | null>(null)
   const [historySnap, setHistorySnap] = useState<LSample[]>([])
   const [, frameTick] = useReducer((x: number) => x + 1, 0)

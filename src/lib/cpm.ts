@@ -340,7 +340,9 @@ function autoLayout(inputs: ActivityInput[]): NetworkLayout {
   const maxRows = Math.max(...layers.map((l) => l.length))
   const COL_GAP = 165
   const X0 = 190
-  const width = X0 + (nLayers - 1) * COL_GAP + 135
+  // generous right margin so arrows into Finish always have a clear
+  // horizontal run instead of collapsing into near-vertical lines
+  const width = X0 + (nLayers - 1) * COL_GAP + 195
   const height = Math.max(300, maxRows * 84 + 72)
 
   const pos: Record<string, LayoutPoint> = {}

@@ -1,11 +1,10 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useRef } from 'react'
 import type { CpmSchedule, ScheduledActivity } from '../../../lib/cpm'
-import { layoutNetwork, type NetworkLayout } from '../../../lib/cpm'
+import { layoutNetwork, type LayoutPoint } from '../../../lib/cpm'
 import {
   COLOR_CRITICAL,
   COLOR_MUTED_STROKE,
   CRITICAL_FILL,
-  GRID,
   INK,
   INK_MUTED,
   INK_SOFT,
@@ -22,8 +21,8 @@ interface Edge {
   from: string // activity id or 'START'
   to: string // activity id or 'FINISH'
   critical: boolean
-  p1: { x: number; y: number }
-  p2: { x: number; y: number }
+  p1: LayoutPoint
+  p2: LayoutPoint
 }
 
 /** An arrow is on the critical path when both endpoints have zero slack and
@@ -50,7 +49,15 @@ function spreadOffset(index: number, count: number, maxSpan: number): number {
   return (index - (count - 1) / 2) * gap
 }
 
-function buildEdges(schedule: CpmSchedule, layout: NetworkLayout): Edge[] {
+interface ResolvedLayout {
+  pos: Record<string, LayoutPoint>
+  start: LayoutPoint
+  finish: LayoutPoint
+  width: number
+  height: number
+}
+
+function buildEdges(schedule: CpmSchedule, layout: ResolvedLayout): Edge[] {
   const centerOf = (id: string) =>
     id === 'START' ? layout.start : id === 'FINISH' ? layout.finish : layout.pos[id]
   const halfW = (id: string) =>
@@ -65,9 +72,12 @@ function buildEdges(schedule: CpmSchedule, layout: NetworkLayout): Edge[] {
     if (a.successors.length === 0) raw.push({ from: a.id, to: 'FINISH' })
   }
 
-  /** an edge between (near-)vertically stacked nodes connects top-to-bottom
-   *  instead of right-to-left, like J → K in the textbook figure */
+  /** edges between two vertically stacked ACTIVITY nodes connect
+   *  top-to-bottom (like J → K in the textbook figure); arrows to and from
+   *  the Start/Finish pills always run horizontally */
   const isVertical = (e: { from: string; to: string }) =>
+    e.from !== 'START' &&
+    e.to !== 'FINISH' &&
     Math.abs(centerOf(e.to).x - centerOf(e.from).x) < 40
 
   // group HORIZONTAL edges by endpoint for fan offsets, sorted by far-end y
@@ -108,11 +118,12 @@ function buildEdges(schedule: CpmSchedule, layout: NetworkLayout): Edge[] {
       ins.length,
       NODE_H - 18,
     )
+    const backwards = c2.x - c1.x < 0
     return {
       ...e,
       critical,
-      p1: { x: c1.x + halfW(e.from), y: c1.y + fromOff },
-      p2: { x: c2.x - halfW(e.to), y: c2.y + toOff },
+      p1: { x: c1.x + (backwards ? -halfW(e.from) : halfW(e.from)), y: c1.y + fromOff },
+      p2: { x: c2.x + (backwards ? halfW(e.to) : -halfW(e.to)), y: c2.y + toOff },
     }
   })
 }
@@ -121,20 +132,22 @@ function ActivityNode({
   a,
   pos,
   hideAnswers,
+  onPointerDown,
 }: {
   a: ScheduledActivity
-  pos: { x: number; y: number }
+  pos: LayoutPoint
   hideAnswers: boolean
+  onPointerDown: (e: React.PointerEvent) => void
 }) {
   const { x, y } = pos
   const crit = !hideAnswers && a.critical
   const cornerInk = crit ? INK_SOFT : INK_MUTED
   return (
-    <g>
+    <g onPointerDown={onPointerDown} style={{ cursor: 'grab' }}>
       <title>
         {hideAnswers
-          ? `${a.id}${a.name ? `. ${a.name}` : ''} — ${a.duration} wk · fill in EST, EFT, LST, LFT`
-          : `${a.id}${a.name ? `. ${a.name}` : ''} — ${a.duration} wk · EST ${a.est}, EFT ${a.eft}, LST ${a.lst}, LFT ${a.lft} · slack ${a.slack}${crit ? ' (critical)' : ''}`}
+          ? `${a.id}${a.name ? `. ${a.name}` : ''} — ${a.duration} wk · fill in EST, EFT, LST, LFT · drag to move`
+          : `${a.id}${a.name ? `. ${a.name}` : ''} — ${a.duration} wk · EST ${a.est}, EFT ${a.eft}, LST ${a.lst}, LFT ${a.lft} · slack ${a.slack}${crit ? ' (critical)' : ''} · drag to move`}
       </title>
       <rect
         x={x - NODE_W / 2}
@@ -146,29 +159,7 @@ function ActivityNode({
         stroke={crit ? COLOR_CRITICAL : COLOR_MUTED_STROKE}
         strokeWidth={crit ? 2.5 : 1.5}
       />
-      {hideAnswers ? (
-        // blank cells for students to fill in
-        <>
-          {[
-            { cx: x - 29, cy: y - 20 },
-            { cx: x + 29, cy: y - 20 },
-            { cx: x - 29, cy: y + 20 },
-            { cx: x + 29, cy: y + 20 },
-          ].map((c, i) => (
-            <rect
-              key={i}
-              x={c.cx - 15}
-              y={c.cy - 7.5}
-              width={30}
-              height={15}
-              rx={2}
-              fill="white"
-              stroke={GRID}
-              strokeWidth={1}
-            />
-          ))}
-        </>
-      ) : (
+      {!hideAnswers && (
         <>
           <text x={x - 39} y={y - 15} fontSize="14" fill={cornerInk} className="tabular-nums">
             {a.est}
@@ -208,7 +199,7 @@ function ActivityNode({
   )
 }
 
-function Pill({ at, label }: { at: { x: number; y: number }; label: string }) {
+function Pill({ at, label }: { at: LayoutPoint; label: string }) {
   return (
     <g>
       <rect
@@ -256,22 +247,66 @@ function KeyNode() {
 
 /**
  * The project network: an SVG DAG, Start on the left, Finish on the right,
- * laid out automatically from the precedence structure. Zero-slack nodes
- * and tight arrows are garnet; everything with slack is muted stone. In
- * practice mode the four corner values become blank cells to fill in.
+ * laid out automatically from the precedence structure (the class project
+ * uses the textbook figure's arrangement). Every activity box is draggable,
+ * and the arrangement is passed back up so the PDF worksheet matches.
  */
 export const Network = memo(function Network({
   schedule,
   hideAnswers = false,
+  overrides,
+  onMove,
 }: {
   schedule: CpmSchedule
   hideAnswers?: boolean
+  /** user-dragged node centers, keyed by activity id */
+  overrides: Record<string, LayoutPoint>
+  onMove: (id: string, pos: LayoutPoint) => void
 }) {
-  const layout = useMemo(
-    () => layoutNetwork(schedule.activities),
-    [schedule],
-  )
+  const layout = useMemo<ResolvedLayout>(() => {
+    const base = layoutNetwork(schedule.activities)
+    return {
+      ...base,
+      pos: Object.fromEntries(
+        schedule.activities.map((a) => [
+          a.id,
+          overrides[a.id] ?? base.pos[a.id],
+        ]),
+      ),
+    }
+  }, [schedule, overrides])
   const edges = useMemo(() => buildEdges(schedule, layout), [schedule, layout])
+
+  const svgRef = useRef<SVGSVGElement>(null)
+  const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null)
+
+  /** map a pointer event to viewBox coordinates */
+  const svgPoint = (e: React.PointerEvent) => {
+    const rect = svgRef.current!.getBoundingClientRect()
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * layout.width,
+      y: ((e.clientY - rect.top) / rect.height) * layout.height,
+    }
+  }
+
+  const startDrag = (e: React.PointerEvent, id: string) => {
+    const p = svgPoint(e)
+    const c = layout.pos[id]
+    dragRef.current = { id, dx: c.x - p.x, dy: c.y - p.y }
+    ;(e.target as Element).setPointerCapture(e.pointerId)
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const drag = dragRef.current
+    if (!drag) return
+    const p = svgPoint(e)
+    onMove(drag.id, {
+      x: Math.min(layout.width - NODE_W / 2 - 4, Math.max(NODE_W / 2 + 4, p.x + drag.dx)),
+      y: Math.min(layout.height - NODE_H / 2 - 4, Math.max(NODE_H / 2 + 4, p.y + drag.dy)),
+    })
+  }
+  const endDrag = () => {
+    dragRef.current = null
+  }
 
   return (
     <div>
@@ -291,6 +326,9 @@ export const Network = memo(function Network({
             </svg>
             {hideAnswers ? 'Precedence arrow' : 'Has slack'}
           </span>
+          <span className="text-stone-400">
+            drag any box to rearrange the diagram
+          </span>
         </div>
         <div className="flex items-center gap-2 text-xs text-stone-500">
           <span>How to read a node:</span>
@@ -299,15 +337,19 @@ export const Network = memo(function Network({
       </div>
       <div className="overflow-x-auto">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${layout.width} ${layout.height}`}
-          className="w-full"
+          className="w-full touch-none select-none"
           style={{ minWidth: Math.min(layout.width * 0.75, 700) }}
           role="img"
           aria-label={
             hideAnswers
-              ? 'Project network diagram with blank scheduling cells to fill in'
+              ? 'Project network diagram — work out the four scheduling values for each node'
               : 'Project network diagram with the critical path highlighted'
           }
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
         >
           <defs>
             <marker id="cpm-arrow-critical" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
@@ -355,6 +397,7 @@ export const Network = memo(function Network({
               a={a}
               pos={layout.pos[a.id]}
               hideAnswers={hideAnswers}
+              onPointerDown={(e) => startDrag(e, a.id)}
             />
           ))}
         </svg>

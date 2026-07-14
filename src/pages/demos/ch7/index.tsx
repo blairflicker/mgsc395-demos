@@ -8,6 +8,7 @@ import {
   nextActivityId,
   randomProject,
   type ActivityInput,
+  type LayoutPoint,
 } from '../../../lib/cpm'
 import { Network } from './Network'
 import { Gantt } from './Gantt'
@@ -60,6 +61,8 @@ export default function Ch7ProjectManagement() {
   const [predDrafts, setPredDrafts] = useState<Record<string, string>>({})
   const [crashed, setCrashed] = useState<Record<string, boolean>>({})
   const [showAnswers, setShowAnswers] = useState(true)
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const [nodeOverrides, setNodeOverrides] = useState<Record<string, LayoutPoint>>({})
 
   useEffect(() => {
     document.title = 'Project Management · MGSC 395'
@@ -191,35 +194,78 @@ export default function Ch7ProjectManagement() {
     })
   }
 
-  const hideNonCritical = () => {
-    const critical = new Set(schedule.criticalIds)
+  const showAllRows = () => {
+    setRows((list) => list.map((r) => ({ ...r, hidden: false })))
+  }
+
+  const hideAllRows = () => {
+    setRows((list) => list.map((r) => ({ ...r, hidden: true })))
+    setCrashed({})
+  }
+
+  const pathKey = (ids: string[]) => ids.join('-')
+
+  const togglePath = (key: string) => {
+    setSelectedPaths((s) => {
+      const next = new Set(s)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  /** union of activity ids on the currently selected (and existing) paths */
+  const selectedIds = useMemo(() => {
+    const out = new Set<string>()
+    for (const p of schedule.paths) {
+      if (selectedPaths.has(pathKey(p.ids))) for (const id of p.ids) out.add(id)
+    }
+    return out
+  }, [schedule, selectedPaths])
+
+  const showOnlySelected = () => {
+    if (selectedIds.size === 0) return
     setRows((list) =>
-      list.map((r) => (critical.has(r.id) ? r : { ...r, hidden: true })),
+      list.map((r) => ({ ...r, hidden: !selectedIds.has(r.id) })),
     )
     setCrashed({})
   }
 
-  const showAll = () => {
-    setRows((list) => list.map((r) => ({ ...r, hidden: false })))
-  }
+  /** highlight for the activities table, driven by selected paths */
+  const rowHighlight = useMemo(() => {
+    const out: Record<string, 'critical' | 'plain'> = {}
+    for (const p of schedule.paths) {
+      if (!selectedPaths.has(pathKey(p.ids))) continue
+      for (const id of p.ids) {
+        if (p.critical) out[id] = 'critical'
+        else out[id] ??= 'plain'
+      }
+    }
+    return out
+  }, [schedule, selectedPaths])
 
   const backToClass = () => {
     setRows(cloneClass())
     setPredDrafts({})
     setCrashed({})
+    setSelectedPaths(new Set())
+    setNodeOverrides({})
   }
 
   const makeRandom = () => {
     setRows(randomProject())
     setPredDrafts({})
     setCrashed({})
+    setSelectedPaths(new Set())
+    setNodeOverrides({})
     setShowAnswers(false)
   }
 
+  const moveNode = (id: string, pos: LayoutPoint) => {
+    setNodeOverrides((o) => ({ ...o, [id]: pos }))
+  }
+
   const anyHidden = rows.some((r) => r.hidden)
-  const anyNonCriticalVisible = rows.some(
-    (r) => !r.hidden && !schedule.criticalIds.includes(r.id),
-  )
   const isClassPlan =
     !anyHidden &&
     rows.length === ST_JOHNS.length &&
@@ -244,6 +290,7 @@ export default function Ch7ProjectManagement() {
     : 0
 
   const maxPathTime = Math.max(...schedule.paths.map((p) => p.duration), 1)
+  const nothingVisible = activeInputs.length === 0
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -276,12 +323,6 @@ export default function Ch7ProjectManagement() {
           Create a random problem
         </button>
         <button
-          onClick={() => void downloadWorksheet(activeInputs)}
-          className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
-        >
-          Download worksheet (PDF)
-        </button>
-        <button
           onClick={backToClass}
           disabled={isClassPlan}
           className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
@@ -298,40 +339,20 @@ export default function Ch7ProjectManagement() {
 
       {/* Activity table editor */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-stone-900">
-              The activities
-            </h2>
-            <p className="max-w-3xl text-sm text-stone-600">
-              Click a cell and type — descriptions, durations, and
-              predecessors (letters separated by commas). The eye hides an
-              activity from the project without losing its row: hide
-              everything off the critical path and study the skeleton, then
-              bring them back.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={hideNonCritical}
-              disabled={!showAnswers || !anyNonCriticalVisible}
-              title={
-                !showAnswers
-                  ? 'Reveal the answers first — hiding needs to know which activities are critical'
-                  : 'Hide every visible activity that is not on the critical path'
-              }
-              className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-            >
-              Hide non-critical
-            </button>
-            <button
-              onClick={showAll}
-              disabled={!anyHidden}
-              className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-            >
-              Show all
-            </button>
-          </div>
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold text-stone-900">
+            The activities
+          </h2>
+          <p className="max-w-3xl text-sm text-stone-600">
+            Click a cell and type — descriptions, durations, and predecessors
+            (letters separated by commas). The eye hides an activity from the
+            project without losing its row; the{' '}
+            <span
+              className="mx-0.5 inline-block h-2 w-2 rounded-full align-middle"
+              style={{ backgroundColor: COLOR_CRITICAL }}
+            />{' '}
+            dot marks the critical path.
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-130 text-sm">
@@ -357,29 +378,30 @@ export default function Ch7ProjectManagement() {
                 const predText = draft ?? r.predecessors.join(', ')
                 const predInvalid =
                   draft !== undefined && parsePreds(r.id, draft) === null
-                const lastVisible = !r.hidden && visibleIds.size <= 1
+                const highlight = showAnswers ? rowHighlight[r.id] : undefined
                 return (
                   <tr
                     key={r.id}
                     className={[
                       'border-b border-stone-100 last:border-0',
                       r.hidden ? 'opacity-45' : '',
-                      critical ? 'bg-garnet-50/60' : '',
+                      highlight === 'critical'
+                        ? 'bg-garnet-50/60'
+                        : highlight === 'plain'
+                          ? 'bg-stone-100'
+                          : '',
                     ].join(' ')}
                   >
                     <td className="py-1">
                       <button
                         onClick={() => toggleHidden(r.id)}
-                        disabled={lastVisible}
                         title={
-                          lastVisible
-                            ? 'At least one activity must stay visible'
-                            : r.hidden
-                              ? `Show ${r.id} again`
-                              : `Hide ${r.id} from the project (keeps the row)`
+                          r.hidden
+                            ? `Show ${r.id} again`
+                            : `Hide ${r.id} from the project (keeps the row)`
                         }
                         aria-label={r.hidden ? `Show activity ${r.id}` : `Hide activity ${r.id}`}
-                        className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 disabled:opacity-30"
+                        className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
                       >
                         <EyeIcon open={!r.hidden} />
                       </button>
@@ -389,7 +411,7 @@ export default function Ch7ProjectManagement() {
                         <span
                           className="inline-block h-2 w-2 shrink-0 rounded-full"
                           style={{
-                            backgroundColor: critical ? COLOR_CRITICAL : 'transparent',
+                            backgroundColor: critical ? COLOR_CRITICAL : 'white',
                             border: critical ? 'none' : `1.5px solid ${COLOR_MUTED}`,
                           }}
                         />
@@ -451,10 +473,9 @@ export default function Ch7ProjectManagement() {
                     <td className="py-1">
                       <button
                         onClick={() => deleteRow(r.id)}
-                        disabled={rows.length <= 1 || lastVisible}
                         title={`Delete row ${r.id} permanently (use the eye to hide instead)`}
                         aria-label={`Delete activity ${r.id}`}
-                        className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700 disabled:opacity-30"
+                        className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700"
                       >
                         ×
                       </button>
@@ -475,336 +496,368 @@ export default function Ch7ProjectManagement() {
           </button>
           {anyHidden && (
             <span className="text-xs text-stone-500">
-              {rows.filter((r) => r.hidden).length} hidden — the network,
-              table, and Gantt below use only the visible activities.
+              {rows.filter((r) => r.hidden).length} hidden — everything below
+              uses only the visible activities.
             </span>
           )}
         </div>
       </div>
 
-      {/* Paths — listed first: you can only spot the critical path after
-          writing down every path */}
-      {showAnswers && (
-        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-5">
-          <h2 className="mb-1 text-lg font-semibold text-stone-900">
-            Every path from Start to Finish
-          </h2>
-          <p className="mb-4 max-w-3xl text-sm text-stone-600">
-            First, list every path — a path&rsquo;s time is the sum of its
-            activities&rsquo; times. The slowest path sets the project
-            duration, no schedule can beat it, and that is precisely the
-            critical path. Just like a bottleneck sets a process&rsquo;s
-            capacity.
-          </p>
-          <div className="space-y-3">
-            {schedule.paths.map((p) => (
-              <div key={p.ids.join('-')}>
-                <div className="mb-1 flex items-baseline justify-between text-sm">
-                  <span
-                    className={
-                      p.critical
-                        ? 'font-semibold text-stone-900'
-                        : 'text-stone-600'
-                    }
-                  >
-                    {p.ids.join('–')}
-                    {p.critical && (
-                      <span className="ml-2 rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800">
-                        critical
-                      </span>
-                    )}
-                  </span>
-                  <span className="font-medium text-stone-700 tabular-nums">
-                    {p.duration} wks
-                  </span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-stone-100">
-                  <div
-                    className="h-2 rounded-full"
-                    style={{
-                      width: `${(p.duration / maxPathTime) * 100}%`,
-                      backgroundColor: p.critical ? COLOR_CRITICAL : COLOR_MUTED,
-                    }}
-                  />
+      {nothingVisible ? (
+        <div className="mb-6 rounded-xl border border-stone-200 bg-white p-10 text-center text-sm text-stone-500">
+          Everything is hidden.{' '}
+          <button
+            onClick={showAllRows}
+            className="font-medium text-garnet-800 underline-offset-2 hover:underline"
+          >
+            Show all
+          </button>{' '}
+          or use the eye toggles to bring activities back.
+        </div>
+      ) : (
+        <>
+          {/* Paths — listed first: you can only spot the critical path after
+              writing down every path */}
+          {showAnswers && (
+            <div className="mb-4 rounded-xl border border-stone-200 bg-white p-5">
+              <h2 className="mb-1 text-lg font-semibold text-stone-900">
+                Every path from Start to Finish
+              </h2>
+              <p className="mb-3 max-w-3xl text-sm text-stone-600">
+                First, list every path and add up its activity times. The
+                slowest path sets the project duration — that is the critical
+                path. Click a path to light up its activities in the table
+                above; then use the buttons below to study just those
+                activities.
+              </p>
+              <div className="overflow-x-auto">
+                <div className="min-w-140 space-y-1">
+                  {schedule.paths.map((p) => {
+                    const key = pathKey(p.ids)
+                    const selected = selectedPaths.has(key)
+                    const mathLabel = p.ids
+                      .map((id) => schedule.byId[id].duration)
+                      .join(' + ')
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => togglePath(key)}
+                        aria-pressed={selected}
+                        className={[
+                          'flex w-full items-center gap-4 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                          selected
+                            ? p.critical
+                              ? 'bg-garnet-50/80'
+                              : 'bg-stone-100'
+                            : 'hover:bg-stone-50',
+                        ].join(' ')}
+                      >
+                        <span
+                          className={[
+                            'w-32 shrink-0',
+                            p.critical
+                              ? 'font-semibold text-stone-900'
+                              : 'text-stone-600',
+                          ].join(' ')}
+                        >
+                          {p.ids.join('–')}
+                        </span>
+                        <span className="flex-1 whitespace-nowrap text-stone-600 tabular-nums">
+                          {mathLabel} ={' '}
+                          <strong className="text-stone-900">{p.duration}</strong>{' '}
+                          wks
+                        </span>
+                        <span className="w-16 shrink-0 text-center">
+                          {p.critical && (
+                            <span className="rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800">
+                              critical
+                            </span>
+                          )}
+                        </span>
+                        <span className="w-1/3 shrink-0">
+                          <span className="block h-2 w-full rounded-full bg-stone-100">
+                            <span
+                              className="block h-2 rounded-full"
+                              style={{
+                                width: `${(p.duration / maxPathTime) * 100}%`,
+                                backgroundColor: p.critical
+                                  ? COLOR_CRITICAL
+                                  : COLOR_MUTED,
+                              }}
+                            />
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Headline result */}
-      <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
-        <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
-          <div>
-            <div className="text-sm font-medium text-stone-600">
-              Project duration
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-stone-100 pt-3">
+                <button
+                  onClick={showAllRows}
+                  disabled={!anyHidden}
+                  className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+                >
+                  Show all
+                </button>
+                <button
+                  onClick={hideAllRows}
+                  className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+                >
+                  Hide all
+                </button>
+                <button
+                  onClick={showOnlySelected}
+                  disabled={selectedIds.size === 0}
+                  title={
+                    selectedIds.size === 0
+                      ? 'Click one or more paths first'
+                      : 'Hide every activity that is not on a selected path'
+                  }
+                  className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+                >
+                  Show only those selected
+                </button>
+              </div>
             </div>
-            <div className="text-4xl font-bold text-stone-900 tabular-nums">
-              {showAnswers ? schedule.projectDuration : '?'}
-              <span className="ml-1.5 text-lg font-normal text-stone-500">
-                weeks
+          )}
+
+          {/* Headline result */}
+          <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
+            <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
+              <div>
+                <div className="text-sm font-medium text-stone-600">
+                  Project duration
+                </div>
+                <div className="text-4xl font-bold text-stone-900 tabular-nums">
+                  {showAnswers ? schedule.projectDuration : '?'}
+                  <span className="ml-1.5 text-lg font-normal text-stone-500">
+                    weeks
+                  </span>
+                </div>
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-stone-600">
+                  Critical path{showAnswers && schedule.criticalPaths.length > 1 ? 's' : ''}
+                </div>
+                {showAnswers ? (
+                  <>
+                    {schedule.criticalPaths.map((p) => (
+                      <div
+                        key={p.ids.join('-')}
+                        className="text-base font-semibold text-garnet-800"
+                      >
+                        {pathLabel(p.ids)}
+                      </div>
+                    ))}
+                    {!isClassPlan && (
+                      <div className="mt-1 text-xs text-stone-500">
+                        Class plan: {CLASS_PLAN.projectDuration} weeks via{' '}
+                        {pathLabel(CLASS_PLAN.criticalPaths[0].ids)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-base text-stone-400">
+                    hidden — work it out, then hit &ldquo;Show answers&rdquo;
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Network diagram */}
+          <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
+            <h2 className="mb-1 text-lg font-semibold text-stone-900">
+              The project network
+            </h2>
+            <p className="mb-3 max-w-3xl text-sm text-stone-600">
+              {showAnswers ? (
+                <>
+                  Each node carries the four numbers from class: Earliest
+                  Start and Earliest Finish across the top, Latest Start and
+                  Latest Finish across the bottom. The forward game fills in
+                  the top row (taking the <strong>MAX</strong> of the
+                  predecessors&rsquo; EFTs); the backward game fills in the
+                  bottom row (taking the <strong>MIN</strong> of the
+                  successors&rsquo; LSTs). Where the two rows agree, slack is
+                  zero — that chain of garnet nodes is the critical path.
+                </>
+              ) : (
+                <>
+                  Every node shows just its letter and estimated time — the
+                  four corner values (EST and EFT across the top, LST and LFT
+                  across the bottom) are yours to work out. Print the
+                  worksheet below and write them in. Treat it like sudoku.
+                </>
+              )}
+            </p>
+            <Network
+              schedule={schedule}
+              hideAnswers={!showAnswers}
+              overrides={nodeOverrides}
+              onMove={moveNode}
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
+              <button
+                onClick={() => void downloadWorksheet(activeInputs, { positions: nodeOverrides })}
+                className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+              >
+                Create worksheet (PDF)
+              </button>
+              <button
+                onClick={() =>
+                  void downloadWorksheet(activeInputs, {
+                    positions: nodeOverrides,
+                    solution: true,
+                  })
+                }
+                className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+              >
+                Create solutions (PDF)
+              </button>
+              <span className="text-xs text-stone-500">
+                Both use this exact problem — and your arrangement, if you
+                dragged the boxes.
               </span>
             </div>
           </div>
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-stone-600">
-              Critical path{showAnswers && schedule.criticalPaths.length > 1 ? 's' : ''}
+
+          {/* Schedule table */}
+          <div className="mb-6 overflow-x-auto rounded-xl border border-stone-200 bg-white p-5">
+            <ScheduleTable schedule={schedule} showAnswers={showAnswers} />
+          </div>
+
+          {/* Gantt */}
+          {showAnswers && (
+            <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
+              <h2 className="mb-1 text-lg font-semibold text-stone-900">
+                Gantt chart — grab a bar and feel the slack
+              </h2>
+              <p className="mb-3 max-w-3xl text-sm text-stone-600">
+                Every bar starts at its Earliest Start Time. Bars with slack
+                can be dragged anywhere inside their whisker — early, late,
+                anywhere between EST and LFT — without delaying the project.
+                The connectors never break: drag a bar into a neighbor and it
+                shoves that neighbor along, until the whole chain runs out of
+                slack. Critical bars can&rsquo;t move at all; that is what
+                zero slack means.
+              </p>
+              <Gantt schedule={schedule} />
             </div>
-            {showAnswers ? (
-              <>
-                {schedule.criticalPaths.map((p) => (
-                  <div
-                    key={p.ids.join('-')}
-                    className="text-base font-semibold text-garnet-800"
-                  >
-                    {pathLabel(p.ids)}
-                  </div>
-                ))}
-                {!isClassPlan && (
-                  <div className="mt-1 text-xs text-stone-500">
-                    Class plan: {CLASS_PLAN.projectDuration} weeks via{' '}
-                    {pathLabel(CLASS_PLAN.criticalPaths[0].ids)}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-base text-stone-400">
-                hidden — work it out, then hit &ldquo;Show answers&rdquo;
+          )}
+
+          {/* Crashing — only meaningful on the class project */}
+          {showAnswers && isClassStructure && baseline && (
+            <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
+              <h2 className="mb-1 text-lg font-semibold text-stone-900">
+                Crashing: paying to finish sooner
+              </h2>
+              <p className="mb-4 max-w-3xl text-sm text-stone-600">
+                Crashing means spending money to shorten an activity. Class
+                considered two opportunities. One is expensive and shortens
+                the project; the other is cheap and does <em>nothing</em>.
+                Toggle each and watch the network above — the only crashes
+                worth buying are on the critical path.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {crashImpacts.map(({ option: o, duration: withOnly }) => {
+                  const a = schedule.byId[o.id]
+                  const weeksSaved = baseline.projectDuration - withOnly
+                  const extraCost = o.crashCost - o.normalCost
+                  const active = !!crashed[o.id]
+                  const rowDuration = rows.find((r) => r.id === o.id)!.duration
+                  return (
+                    <label
+                      key={o.id}
+                      className={[
+                        'block cursor-pointer rounded-lg border p-4 transition-colors',
+                        active
+                          ? 'border-garnet-300 bg-garnet-50/60'
+                          : 'border-stone-200 hover:bg-stone-50',
+                      ].join(' ')}
+                    >
+                      <div className="mb-2 flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={active}
+                          onChange={(e) =>
+                            setCrashed((c) => ({ ...c, [o.id]: e.target.checked }))
+                          }
+                          className="mt-1 h-4 w-4 accent-garnet-700"
+                        />
+                        <div>
+                          <div className="font-semibold text-stone-900">
+                            Crash {o.id} — {a.name}
+                          </div>
+                          <div className="text-xs text-stone-500">
+                            {a.critical && !active ? 'on the critical path' : ''}
+                            {!a.critical && !active ? 'not on the critical path' : ''}
+                            {active ? 'crash applied' : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mb-2 grid grid-cols-2 gap-2 text-sm">
+                        <div className="rounded-md bg-stone-50 px-3 py-2">
+                          <div className="text-xs text-stone-500">Normal</div>
+                          <div className="font-medium text-stone-800 tabular-nums">
+                            {o.normalTime} wks · {fmtMoney(o.normalCost)}
+                          </div>
+                        </div>
+                        <div className="rounded-md bg-stone-50 px-3 py-2">
+                          <div className="text-xs text-stone-500">Crash</div>
+                          <div className="font-medium text-stone-800 tabular-nums">
+                            {o.crashTime} wk{o.crashTime === 1 ? '' : 's'} ·{' '}
+                            {fmtMoney(o.crashCost)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-sm text-stone-700 tabular-nums">
+                        {fmtMoney(extraCost)} buys:{' '}
+                        {weeksSaved > 0 ? (
+                          <>
+                            project {baseline.projectDuration} → {withOnly} weeks —{' '}
+                            <strong>
+                              {fmtMoney(extraCost / weeksSaved)} per week saved
+                            </strong>
+                          </>
+                        ) : (
+                          <strong>no reduction in project time</strong>
+                        )}
+                      </div>
+                      {rowDuration !== o.normalTime && (
+                        <div className="mt-2 text-xs text-amber-700">
+                          Your table has {o.id} at {rowDuration} wks; the class
+                          example crashes it from {o.normalTime}.
+                        </div>
+                      )}
+                    </label>
+                  )
+                })}
               </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Network diagram */}
-      <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
-        <h2 className="mb-1 text-lg font-semibold text-stone-900">
-          The project network
-        </h2>
-        <p className="mb-3 max-w-3xl text-sm text-stone-600">
-          {showAnswers ? (
-            <>
-              Each node carries the four numbers from class: Earliest Start
-              and Earliest Finish across the top, Latest Start and Latest
-              Finish across the bottom. The forward game fills in the top row
-              (taking the <strong>MAX</strong> of the predecessors&rsquo;
-              EFTs); the backward game fills in the bottom row (taking the{' '}
-              <strong>MIN</strong> of the successors&rsquo; LSTs). Where the
-              two rows agree, slack is zero — that chain of garnet nodes is
-              the critical path.
-            </>
-          ) : (
-            <>
-              The four corner cells of every node are blank: EST and EFT
-              across the top (forward game, Start → Finish), LST and LFT
-              across the bottom (backward game, Finish → Start). Treat it
-              like sudoku.
-            </>
-          )}
-        </p>
-        <Network schedule={schedule} hideAnswers={!showAnswers} />
-      </div>
-
-      {/* Schedule table */}
-      <div className="mb-6 overflow-x-auto rounded-xl border border-stone-200 bg-white p-5">
-        <ScheduleTable schedule={schedule} showAnswers={showAnswers} />
-      </div>
-
-      {/* Gantt */}
-      {showAnswers && (
-        <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
-          <h2 className="mb-1 text-lg font-semibold text-stone-900">
-            Gantt chart — grab a bar and feel the slack
-          </h2>
-          <p className="mb-3 max-w-3xl text-sm text-stone-600">
-            Every bar starts at its Earliest Start Time. Bars with slack can
-            be dragged anywhere inside their whisker — early, late, anywhere
-            between EST and LFT — without delaying the project. The
-            connectors never break: drag a bar into a neighbor and it shoves
-            that neighbor along, until the whole chain runs out of slack.
-            Critical bars can&rsquo;t move at all; that is what zero slack
-            means.
-          </p>
-          <Gantt schedule={schedule} />
-        </div>
-      )}
-
-      {/* Crashing — only meaningful on the class project */}
-      {showAnswers && isClassStructure && baseline && (
-        <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
-          <h2 className="mb-1 text-lg font-semibold text-stone-900">
-            Crashing: paying to finish sooner
-          </h2>
-          <p className="mb-4 max-w-3xl text-sm text-stone-600">
-            Crashing means spending money to shorten an activity. Class
-            considered two opportunities. One is expensive and shortens the
-            project; the other is cheap and does <em>nothing</em>. Toggle
-            each and watch the network above — the only crashes worth buying
-            are on the critical path.
-          </p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {crashImpacts.map(({ option: o, duration: withOnly }) => {
-              const a = schedule.byId[o.id]
-              const weeksSaved = baseline.projectDuration - withOnly
-              const extraCost = o.crashCost - o.normalCost
-              const active = !!crashed[o.id]
-              const rowDuration = rows.find((r) => r.id === o.id)!.duration
-              return (
-                <label
-                  key={o.id}
-                  className={[
-                    'block cursor-pointer rounded-lg border p-4 transition-colors',
-                    active
-                      ? 'border-garnet-300 bg-garnet-50/60'
-                      : 'border-stone-200 hover:bg-stone-50',
-                  ].join(' ')}
-                >
-                  <div className="mb-2 flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={active}
-                      onChange={(e) =>
-                        setCrashed((c) => ({ ...c, [o.id]: e.target.checked }))
-                      }
-                      className="mt-1 h-4 w-4 accent-garnet-700"
-                    />
-                    <div>
-                      <div className="font-semibold text-stone-900">
-                        Crash {o.id} — {a.name}
-                      </div>
-                      <div className="text-xs text-stone-500">
-                        {a.critical && !active ? 'on the critical path' : ''}
-                        {!a.critical && !active ? 'not on the critical path' : ''}
-                        {active ? 'crash applied' : ''}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mb-2 grid grid-cols-2 gap-2 text-sm">
-                    <div className="rounded-md bg-stone-50 px-3 py-2">
-                      <div className="text-xs text-stone-500">Normal</div>
-                      <div className="font-medium text-stone-800 tabular-nums">
-                        {o.normalTime} wks · {fmtMoney(o.normalCost)}
-                      </div>
-                    </div>
-                    <div className="rounded-md bg-stone-50 px-3 py-2">
-                      <div className="text-xs text-stone-500">Crash</div>
-                      <div className="font-medium text-stone-800 tabular-nums">
-                        {o.crashTime} wk{o.crashTime === 1 ? '' : 's'} ·{' '}
-                        {fmtMoney(o.crashCost)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-sm text-stone-700 tabular-nums">
-                    {fmtMoney(extraCost)} buys:{' '}
-                    {weeksSaved > 0 ? (
-                      <>
-                        project {baseline.projectDuration} → {withOnly} weeks —{' '}
-                        <strong>
-                          {fmtMoney(extraCost / weeksSaved)} per week saved
-                        </strong>
-                      </>
-                    ) : (
-                      <strong>no reduction in project time</strong>
-                    )}
-                  </div>
-                  {rowDuration !== o.normalTime && (
-                    <div className="mt-2 text-xs text-amber-700">
-                      Your table has {o.id} at {rowDuration} wks; the class
-                      example crashes it from {o.normalTime}.
-                    </div>
+              {anyCrash && (
+                <div className="mt-4 rounded-lg bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                  With your crashes applied the project finishes in{' '}
+                  <strong className="tabular-nums">
+                    {schedule.projectDuration} weeks
+                  </strong>{' '}
+                  ({weeksSavedNow > 0 ? (
+                    <span className="tabular-nums">{weeksSavedNow} saved</span>
+                  ) : (
+                    'none saved'
                   )}
-                </label>
-              )
-            })}
-          </div>
-          {anyCrash && (
-            <div className="mt-4 rounded-lg bg-stone-50 px-4 py-3 text-sm text-stone-700">
-              With your crashes applied the project finishes in{' '}
-              <strong className="tabular-nums">
-                {schedule.projectDuration} weeks
-              </strong>{' '}
-              ({weeksSavedNow > 0 ? (
-                <span className="tabular-nums">{weeksSavedNow} saved</span>
-              ) : (
-                'none saved'
+                  ) for an extra{' '}
+                  <strong className="tabular-nums">{fmtMoney(totalCrashSpend)}</strong>
+                  . The recipe from class: find the critical-path activity
+                  with the lowest cost per week, and crash it until it
+                  can&rsquo;t be shortened, another path becomes critical, or
+                  the price stops being worth it.
+                </div>
               )}
-              ) for an extra{' '}
-              <strong className="tabular-nums">{fmtMoney(totalCrashSpend)}</strong>
-              . The recipe from class: find the critical-path activity with
-              the lowest cost per week, and crash it until it can&rsquo;t be
-              shortened, another path becomes critical, or the price stops
-              being worth it.
             </div>
           )}
-        </div>
+        </>
       )}
-
-      {/* Notes */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-stone-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-stone-900">
-            The formulas from class
-          </h2>
-          <ul className="list-disc space-y-1.5 pl-5 text-stone-600">
-            <li>
-              <strong>Forward game</strong> — set EST&nbsp;=&nbsp;0 for
-              activities with no predecessors, then{' '}
-              <em>Earliest Finish = Earliest Start + Estimated Time</em>. With
-              several predecessors, EST is the <strong>MAX</strong> of their
-              EFTs — all of them must finish first.
-            </li>
-            <li>
-              <strong>Backward game</strong> — start at the finish
-              (LFT&nbsp;=&nbsp;project duration) and work backward using{' '}
-              <em>Latest Finish = Latest Start + Estimated Time</em>. With
-              several successors, LFT is the <strong>MIN</strong> of their
-              LSTs.
-            </li>
-            <li>
-              <strong>Slack = LFT − EFT</strong> (equivalently LST − EST): the
-              wiggle room between the do-everything-ASAP plan and the
-              last-possible-second plan.
-            </li>
-            <li>
-              <strong>Critical path</strong> — the zero-slack chain. Treat it
-              like a bottleneck: it determines the overall finish, so protect
-              it at all costs.
-            </li>
-          </ul>
-        </div>
-        <div className="rounded-xl border border-stone-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-stone-900">Try this</h2>
-          <ul className="list-disc space-y-1.5 pl-5 text-stone-600">
-            <li>
-              Hit <strong>Hide non-critical</strong>. The project collapses
-              to the B–D–H–J–K skeleton and the duration stays 69 weeks — the
-              other six activities truly do not set the finish date. Then{' '}
-              <strong>Show all</strong> and stretch F until it does.
-            </li>
-            <li>
-              In the Gantt chart, drag F anywhere in its 41-week window —
-              early, late, it never matters. Then try to drag H. It
-              won&rsquo;t budge: zero slack.
-            </li>
-            <li>
-              Drag C to the right: it immediately shoves G along through the
-              connector, and both hit their late limits together — slack is
-              shared along a path, not owned by one activity.
-            </li>
-            <li>
-              Add one week to H (Construct hospital, slack 0). The project
-              instantly slips to 70 weeks. Now stretch F to 52 and the
-              critical path <em>shifts</em> to A–F–K.
-            </li>
-            <li>
-              Hit &ldquo;Create a random problem&rdquo;, download the
-              worksheet, fill in all four corners of every node by hand, then
-              &ldquo;Show answers&rdquo; to grade yourself.
-            </li>
-          </ul>
-        </div>
-      </div>
     </div>
   )
 }

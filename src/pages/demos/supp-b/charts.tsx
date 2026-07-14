@@ -399,8 +399,10 @@ export const DurationHistogram = memo(function DurationHistogram({
 })
 
 /**
- * Share of time the system spent with exactly n customers, with the
- * theoretical geometric distribution P(n) = (1−ρ)ρⁿ as reference markers.
+ * Share of time the system spent with exactly n customers — drawn with
+ * the same skinny-bar anatomy as the duration histograms (30 bars,
+ * n = 0..29), with the theoretical P(n) = (1−ρ)ρⁿ as a dashed curve
+ * that simply trails off; no lumped overflow bucket.
  */
 export const StateDistribution = memo(function StateDistribution({
   stateShare,
@@ -412,23 +414,26 @@ export const StateDistribution = memo(function StateDistribution({
   rho: number | null
   simTime: number
 }) {
-  const SHOWN = 14 // bars for n = 0..13, then a "14+" bucket
-  const shares = stateShare.slice(0, SHOWN)
-  shares.push(stateShare.slice(SHOWN).reduce((a, b) => a + b, 0))
+  const N_SHOWN = 30 // same bar count as the duration histograms
+  const shares = Array.from({ length: N_SHOWN }, (_, n) => stateShare[n] ?? 0)
 
-  const theory =
-    rho !== null && rho < 1
-      ? [
-          ...Array.from({ length: SHOWN }, (_, n) => (1 - rho) * Math.pow(rho, n)),
-          Math.pow(rho, SHOWN),
-        ]
-      : null
+  const theoryAt =
+    rho !== null && rho < 1 ? (x: number) => (1 - rho) * Math.pow(rho, x) : null
 
-  const yMax = Math.max(...shares, ...(theory ?? [0]), 0.05) * 1.1
-  const slotW = PLOT_W / (SHOWN + 1)
+  const yMax = Math.max(...shares, theoryAt ? theoryAt(0) : 0, 0.05) * 1.08
+  const slotW = PLOT_W / N_SHOWN
   const barW = slotW - 2
-  const xPos = (i: number) => M.left + i * slotW
+  const xPos = (n: number) => M.left + n * slotW
   const yPos = (s: number) => M.top + PLOT_H - (s / yMax) * PLOT_H
+
+  const curve = theoryAt
+    ? Array.from({ length: 61 }, (_, i) => {
+        const x = (i / 60) * N_SHOWN
+        return `${i === 0 ? 'M' : 'L'}${xPos(x).toFixed(1)},${yPos(theoryAt(x)).toFixed(1)}`
+      }).join('')
+    : null
+
+  const xTicks = [0, 10, 20, 30]
 
   return (
     <div>
@@ -438,7 +443,7 @@ export const StateDistribution = memo(function StateDistribution({
       <p className="mb-1 text-xs text-stone-500">
         Share of time with exactly n inside · theory: P(n) = (1−ρ)ρⁿ
       </p>
-      <LegendRow color={COLOR_SYSTEM} theoryLabel="P(n) theory" theoryMarker="dot" />
+      <LegendRow color={COLOR_SYSTEM} theoryLabel="P(n) theory" />
       <div className="relative">
         <svg
           viewBox={`0 0 ${VW} ${VH}`}
@@ -454,53 +459,54 @@ export const StateDistribution = memo(function StateDistribution({
             stroke={GRID}
             strokeWidth="1"
           />
-          {shares.map((s, i) => {
-            const h = M.top + PLOT_H - yPos(s)
+          {shares.map((s, n) => {
+            const y = yPos(s)
+            const h = M.top + PLOT_H - y
             if (h <= 0) return null
             return (
               <rect
-                key={i}
-                x={xPos(i) + 1}
-                y={yPos(s)}
+                key={n}
+                x={xPos(n) + 1}
+                y={y}
                 width={barW}
                 height={h}
                 rx={1.5}
                 fill={COLOR_SYSTEM}
               >
-                <title>
-                  {`n = ${i === SHOWN ? '14+' : i}: ${(s * 100).toFixed(1)}% of the time`}
-                </title>
+                <title>{`n = ${n}: ${(s * 100).toFixed(1)}% of the time`}</title>
               </rect>
             )
           })}
-          {theory &&
-            theory.map((p, i) => (
-              <circle
-                key={i}
-                cx={xPos(i) + slotW / 2}
-                cy={yPos(p)}
-                r="3"
-                fill="white"
-                stroke={COLOR_THEORY}
-                strokeWidth="1.8"
-              >
-                <title>{`theory P(${i === SHOWN ? '14+' : i}) = ${(p * 100).toFixed(1)}%`}</title>
-              </circle>
-            ))}
-          {Array.from({ length: SHOWN + 1 }, (_, i) => i)
-            .filter((i) => i % 2 === 0 || i === SHOWN)
-            .map((i) => (
+          {curve && (
+            <path
+              d={curve}
+              fill="none"
+              stroke={COLOR_THEORY}
+              strokeWidth="2"
+              strokeDasharray="5 4"
+            />
+          )}
+          {xTicks.map((tick) => (
+            <g key={tick}>
+              <line
+                x1={xPos(tick)}
+                y1={M.top + PLOT_H}
+                x2={xPos(tick)}
+                y2={M.top + PLOT_H + 4}
+                stroke={INK_MUTED}
+                strokeWidth="1"
+              />
               <text
-                key={i}
-                x={xPos(i) + slotW / 2}
+                x={xPos(tick)}
                 y={M.top + PLOT_H + 16}
                 textAnchor="middle"
                 fontSize="10"
                 fill={INK_MUTED}
               >
-                {i === SHOWN ? '14+' : i}
+                {tick}
               </text>
-            ))}
+            </g>
+          ))}
         </svg>
         {simTime < 0.15 && (
           <div className="absolute inset-0 flex items-center justify-center">
