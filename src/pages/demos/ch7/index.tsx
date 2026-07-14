@@ -265,12 +265,6 @@ export default function Ch7ProjectManagement() {
         >
           Back to class project
         </button>
-        {!showAnswers && (
-          <span className="basis-full text-xs text-garnet-900/80">
-            Answers hidden — work the problem yourself (the worksheet PDF
-            matches this exact problem), then reveal to check.
-          </span>
-        )}
       </div>
 
       {/* Activity table editor */}
