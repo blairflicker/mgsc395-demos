@@ -4,6 +4,7 @@ import {
   GRID_MAX_Y,
   round1,
   type CustomerInput,
+  type DistanceMetric,
   type Point,
 } from '../../../lib/cog'
 import {
@@ -68,11 +69,16 @@ function CgIcon() {
  * crosshair, and a draggable pin for the student's proposed facility.
  * Dragging uses pointer events like ch7's Network; the pin snaps to 0.1.
  */
+/** distance lines are recessive so the markers stay the heroes */
+const DIST_LINE = '#a8a29e'
+
 export const LocationMap = memo(function LocationMap({
   customers,
   cg,
   pin,
   showAnswers,
+  showDistances,
+  metric,
   onPinMove,
 }: {
   customers: CustomerInput[]
@@ -80,6 +86,10 @@ export const LocationMap = memo(function LocationMap({
   cg: Point | null
   pin: Point
   showAnswers: boolean
+  /** draw a distance path from every customer to the pin */
+  showDistances: boolean
+  /** straight lines for Euclidean, L-shaped city-block paths for rectilinear */
+  metric: DistanceMetric
   onPinMove: (p: Point) => void
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
@@ -151,6 +161,18 @@ export const LocationMap = memo(function LocationMap({
           <PinIcon />
           Proposed facility
         </span>
+        {showDistances && (
+          <span className="flex items-center gap-1.5">
+            <svg width="20" height="10" aria-hidden>
+              {metric === 'rectilinear' ? (
+                <path d="M1,1 H13 V9 H19" fill="none" stroke={DIST_LINE} strokeWidth="1.5" strokeDasharray="4 3" />
+              ) : (
+                <line x1="1" y1="9" x2="19" y2="1" stroke={DIST_LINE} strokeWidth="1.5" strokeDasharray="4 3" />
+              )}
+            </svg>
+            Distance to pin
+          </span>
+        )}
         <span className="text-stone-400">drag the pin to test any site</span>
       </div>
       <div className="overflow-x-auto">
@@ -219,6 +241,26 @@ export const LocationMap = memo(function LocationMap({
               {t}
             </text>
           ))}
+
+          {/* distance paths from every customer to the pin — straight for
+              Euclidean, horizontal-then-vertical city blocks for rectilinear */}
+          {showDistances &&
+            customers.map((c) => {
+              const d =
+                metric === 'euclidean'
+                  ? `M${px(c.x)},${py(c.y)} L${px(pin.x)},${py(pin.y)}`
+                  : `M${px(c.x)},${py(c.y)} H${px(pin.x)} V${py(pin.y)}`
+              return (
+                <path
+                  key={`dist-${c.id}`}
+                  d={d}
+                  fill="none"
+                  stroke={DIST_LINE}
+                  strokeWidth="1.3"
+                  strokeDasharray="5 4"
+                />
+              )
+            })}
 
           {/* customers — area-scaled circles with a dot at the exact point */}
           {drawOrder.map((c) => {

@@ -2,22 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import DemoHeader from '../../../components/DemoHeader'
 import {
   CLASS_CUSTOMERS,
-  CLASS_SITES,
   GRID_MAX_X,
   GRID_MAX_Y,
   centerOfGravity,
   distance,
   loadDistance,
   nextCustomerId,
-  nextSiteId,
   randomCustomers,
   round1,
-  siteFinancials,
   totalLoad,
   type CustomerInput,
   type DistanceMetric,
   type Point,
-  type SiteInput,
 } from '../../../lib/cog'
 import { LocationMap } from './Map'
 import { downloadWorksheet } from './worksheet'
@@ -27,7 +23,6 @@ const MAX_CUSTOMERS = 12
 const DEFAULT_PIN: Point = { x: 10, y: 8 }
 
 const cloneCustomers = (): CustomerInput[] => CLASS_CUSTOMERS.map((c) => ({ ...c }))
-const cloneSites = (): SiteInput[] => CLASS_SITES.map((s) => ({ ...s }))
 
 const CELL_INPUT =
   'w-full rounded border border-transparent bg-transparent px-1.5 py-0.5 text-sm ' +
@@ -35,8 +30,6 @@ const CELL_INPUT =
 
 const fmtInt = (v: number) => Math.round(v).toLocaleString('en-US')
 const fmt1 = (v: number) => v.toFixed(1)
-const fmtMoney = (v: number) =>
-  (v < 0 ? '−$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US')
 
 /** the blank write-in box used wherever an answer is hidden */
 function Blank({ w = 'w-14' }: { w?: string }) {
@@ -45,15 +38,15 @@ function Blank({ w = 'w-14' }: { w?: string }) {
 
 export default function Ch13FacilityLocation() {
   const [customers, setCustomers] = useState<CustomerInput[]>(cloneCustomers)
-  const [sites, setSites] = useState<SiteInput[]>(cloneSites)
   const [pin, setPin] = useState<Point>(DEFAULT_PIN)
   const [metric, setMetric] = useState<DistanceMetric>('rectilinear')
+  const [showDistances, setShowDistances] = useState(true)
   const [showAnswers, setShowAnswers] = useState(true)
 
   useEffect(() => {
-    document.title = 'Facility Location · MGSC 395'
+    document.title = 'Facility Location Â· MGSC 395'
     return () => {
-      document.title = 'MGSC 395 · Interactive Demos'
+      document.title = 'MGSC 395 Â· Interactive Demos'
     }
   }, [])
 
@@ -73,7 +66,7 @@ export default function Ch13FacilityLocation() {
     [customers, pin, metric],
   )
 
-  // ── customer editing ────────────────────────────────────
+  // â”€â”€ customer editing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const patchCustomer = (id: string, patch: Partial<CustomerInput>) => {
     setCustomers((list) => list.map((c) => (c.id === id ? { ...c, ...patch } : c)))
   }
@@ -96,67 +89,21 @@ export default function Ch13FacilityLocation() {
     ])
   }
 
-  // ── site editing ────────────────────────────────────────
-  const patchSite = (id: string, patch: Partial<SiteInput>) => {
-    setSites((list) => list.map((s) => (s.id === id ? { ...s, ...patch } : s)))
-  }
-  const setSiteNumber = (
-    id: string,
-    key: 'fixedCost' | 'variableCost' | 'demand' | 'price',
-    value: number,
-  ) => {
-    if (!Number.isFinite(value)) return
-    patchSite(id, { [key]: Math.max(0, key === 'demand' ? Math.round(value) : value) })
-  }
-  const deleteSite = (id: string) => {
-    setSites((list) => list.filter((s) => s.id !== id))
-  }
-  const addSite = () => {
-    setSites((list) => [
-      ...list,
-      {
-        id: nextSiteId(list),
-        name: '',
-        fixedCost: 1_000_000,
-        variableCost: 100,
-        demand: 50_000,
-        price: 400,
-      },
-    ])
-  }
-
-  // ── practice toolbar ────────────────────────────────────
+  // â”€â”€ practice toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const isClassData =
     customers.length === CLASS_CUSTOMERS.length &&
     CLASS_CUSTOMERS.every((c, i) => {
       const r = customers[i]
       return r.name === c.name && r.x === c.x && r.y === c.y && r.load === c.load
-    }) &&
-    sites.length === CLASS_SITES.length &&
-    CLASS_SITES.every((s, i) => {
-      const r = sites[i]
-      return (
-        r.name === s.name &&
-        r.fixedCost === s.fixedCost &&
-        r.variableCost === s.variableCost &&
-        r.demand === s.demand &&
-        r.price === s.price
-      )
     })
 
   const backToClass = () => {
     setCustomers(cloneCustomers())
-    setSites(cloneSites())
   }
   const makeRandom = () => {
     setCustomers(randomCustomers())
     setShowAnswers(false)
   }
-
-  // ── deciding between locations ──────────────────────────
-  const siteRows = sites.map((s) => ({ site: s, fin: siteFinancials(s) }))
-  const bestProfit =
-    siteRows.length > 1 ? Math.max(...siteRows.map((r) => r.fin.profit)) : null
 
   const ldDelta =
     ldAtCg !== null ? Math.round(ldAtPin) - Math.round(ldAtCg) : null
@@ -164,10 +111,10 @@ export default function Ch13FacilityLocation() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <DemoHeader
-        label="Chapter 13 · Supply Chain Logistic Networks"
+        label="Chapter 13 Â· Supply Chain Logistic Networks"
         title="The Center of Gravity, Live"
       >
-        The power-generator example from class — drag the pin to test a
+        The power-generator example from class â€” drag the pin to test a
         site, edit the customers, and watch the center of gravity and
         load-distance scores update live. Or hide the answers and practice
         on a random problem.
@@ -197,23 +144,61 @@ export default function Ch13FacilityLocation() {
         >
           Back to class data
         </button>
-        {!showAnswers && (
-          <span className="basis-full text-xs text-garnet-900/80">
-            Answers hidden — find the center of gravity and the load-distance
-            scores yourself (the worksheet PDF matches this exact problem),
-            then reveal to check.
-          </span>
-        )}
       </div>
 
-      {/* The map — the hero */}
+      {/* The map â€” the hero */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-2 text-lg font-semibold text-stone-900">The map</h2>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-stone-900">The map</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              className="flex overflow-hidden rounded-lg border border-stone-300 text-sm"
+              role="group"
+              aria-label="Distance metric"
+            >
+              <button
+                onClick={() => setMetric('rectilinear')}
+                aria-pressed={metric === 'rectilinear'}
+                className={
+                  metric === 'rectilinear'
+                    ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
+                    : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
+                }
+              >
+                Rectilinear (city blocks)
+              </button>
+              <button
+                onClick={() => setMetric('euclidean')}
+                aria-pressed={metric === 'euclidean'}
+                className={
+                  metric === 'euclidean'
+                    ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
+                    : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
+                }
+              >
+                Euclidean (straight line)
+              </button>
+            </div>
+            <button
+              onClick={() => setShowDistances((v) => !v)}
+              aria-pressed={showDistances}
+              className={
+                showDistances
+                  ? 'rounded-lg bg-garnet-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-garnet-700'
+                  : 'rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50'
+              }
+            >
+              {showDistances ? 'Hide distances' : 'Show distances'}
+            </button>
+          </div>
+        </div>
         <LocationMap
           customers={customers}
           cg={showAnswers ? cgRounded : null}
           pin={pin}
           showAnswers={showAnswers}
+          showDistances={showDistances}
+          metric={metric}
           onPinMove={setPin}
         />
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
@@ -255,7 +240,7 @@ export default function Ch13FacilityLocation() {
                 x<sub>CG</sub>
               </div>
               <div className="text-4xl font-bold text-stone-900 tabular-nums">
-                {showAnswers ? (cgRounded ? fmt1(cgRounded.x) : '—') : '?'}
+                {showAnswers ? (cgRounded ? fmt1(cgRounded.x) : 'â€”') : '?'}
               </div>
             </div>
             <div>
@@ -263,51 +248,21 @@ export default function Ch13FacilityLocation() {
                 y<sub>CG</sub>
               </div>
               <div className="text-4xl font-bold text-stone-900 tabular-nums">
-                {showAnswers ? (cgRounded ? fmt1(cgRounded.y) : '—') : '?'}
+                {showAnswers ? (cgRounded ? fmt1(cgRounded.y) : 'â€”') : '?'}
               </div>
             </div>
           </div>
         </div>
 
         <div className="rounded-xl border border-stone-200 bg-white p-5 lg:col-span-2">
-          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-stone-900">
-              Load-distance scores
-            </h2>
-            <div
-              className="flex overflow-hidden rounded-lg border border-stone-300 text-sm"
-              role="group"
-              aria-label="Distance metric"
-            >
-              <button
-                onClick={() => setMetric('rectilinear')}
-                aria-pressed={metric === 'rectilinear'}
-                className={
-                  metric === 'rectilinear'
-                    ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
-                    : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
-                }
-              >
-                Rectilinear (city blocks)
-              </button>
-              <button
-                onClick={() => setMetric('euclidean')}
-                aria-pressed={metric === 'euclidean'}
-                className={
-                  metric === 'euclidean'
-                    ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
-                    : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
-                }
-              >
-                Euclidean (straight line)
-              </button>
-            </div>
-          </div>
+          <h2 className="mb-1 text-lg font-semibold text-stone-900">
+            Load-distance scores
+          </h2>
           <p className="mb-4 text-sm text-stone-600 tabular-nums">
             {metric === 'rectilinear'
-              ? 'd = |x₂ − x₁| + |y₂ − y₁|'
-              : 'd = √((x₂ − x₁)² + (y₂ − y₁)²)'}
-            {' · LD = Σ (load × distance)'}
+              ? 'd = |xâ‚‚ âˆ’ xâ‚| + |yâ‚‚ âˆ’ yâ‚|'
+              : 'd = âˆš((xâ‚‚ âˆ’ xâ‚)Â² + (yâ‚‚ âˆ’ yâ‚)Â²)'}
+            {'â€ƒÂ·â€ƒLD = Î£ (load Ã— distance)'}
           </p>
           <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
             <div>
@@ -321,7 +276,7 @@ export default function Ch13FacilityLocation() {
                 )}
               </div>
               <div className="text-3xl font-bold text-stone-900 tabular-nums">
-                {showAnswers ? (ldAtCg !== null ? fmtInt(ldAtCg) : '—') : '?'}
+                {showAnswers ? (ldAtCg !== null ? fmtInt(ldAtCg) : 'â€”') : '?'}
               </div>
             </div>
             <div>
@@ -337,7 +292,7 @@ export default function Ch13FacilityLocation() {
                     ? 'same as the CG'
                     : ldDelta > 0
                       ? `+${fmtInt(ldDelta)} vs the CG`
-                      : `−${fmtInt(-ldDelta)} vs the CG — your pin beats it`}
+                      : `âˆ’${fmtInt(-ldDelta)} vs the CG â€” your pin beats it`}
                 </div>
               )}
             </div>
@@ -354,13 +309,13 @@ export default function Ch13FacilityLocation() {
                       Dist. from CG
                     </th>
                     <th className="py-2 pr-3 text-right font-semibold">
-                      Load × dist
+                      Load Ã— dist
                     </th>
                     <th className="py-2 pr-3 text-right font-semibold">
                       Dist. from pin
                     </th>
                     <th className="py-2 text-right font-semibold">
-                      Load × dist
+                      Load Ã— dist
                     </th>
                   </tr>
                 </thead>
@@ -376,12 +331,12 @@ export default function Ch13FacilityLocation() {
                       {showAnswers ? (
                         <>
                           <td className="py-1.5 pr-3 text-right text-stone-700">
-                            {cgRounded ? fmt1(distance(metric, c, cgRounded)) : '—'}
+                            {cgRounded ? fmt1(distance(metric, c, cgRounded)) : 'â€”'}
                           </td>
                           <td className="py-1.5 pr-3 text-right text-stone-700">
                             {cgRounded
                               ? fmtInt(c.load * distance(metric, c, cgRounded))
-                              : '—'}
+                              : 'â€”'}
                           </td>
                           <td className="py-1.5 pr-3 text-right text-stone-700">
                             {fmt1(distance(metric, c, pin))}
@@ -406,7 +361,7 @@ export default function Ch13FacilityLocation() {
                     <td className="py-2 pr-3" />
                     {showAnswers ? (
                       <td className="py-2 pr-3 text-right">
-                        {ldAtCg !== null ? fmtInt(ldAtCg) : '—'}
+                        {ldAtCg !== null ? fmtInt(ldAtCg) : 'â€”'}
                       </td>
                     ) : (
                       <td className="py-2 pr-3"><Blank /></td>
@@ -430,7 +385,7 @@ export default function Ch13FacilityLocation() {
         <div className="mb-3">
           <h2 className="text-lg font-semibold text-stone-900">The customers</h2>
           <p className="text-sm text-stone-600">
-            Click a cell to edit — everything recomputes as you type.
+            Click a cell to edit â€” everything recomputes as you type.
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -494,7 +449,7 @@ export default function Ch13FacilityLocation() {
                     />
                   </td>
                   <td className="py-1 pr-2 text-right text-stone-600 tabular-nums">
-                    {total > 0 ? `${fmt1((c.load / total) * 100)}%` : '—'}
+                    {total > 0 ? `${fmt1((c.load / total) * 100)}%` : 'â€”'}
                   </td>
                   <td className="py-1">
                     <button
@@ -503,7 +458,7 @@ export default function Ch13FacilityLocation() {
                       aria-label={`Delete ${c.name || 'customer'}`}
                       className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700"
                     >
-                      ×
+                      Ã—
                     </button>
                   </td>
                 </tr>
@@ -517,7 +472,7 @@ export default function Ch13FacilityLocation() {
                     {fmtInt(total)}
                   </td>
                   <td className="py-2 pr-2 text-right text-stone-600 tabular-nums">
-                    {total > 0 ? '100.0%' : '—'}
+                    {total > 0 ? '100.0%' : 'â€”'}
                   </td>
                   <td className="py-2" />
                 </tr>
@@ -536,147 +491,6 @@ export default function Ch13FacilityLocation() {
         </div>
       </div>
 
-      {/* Deciding between locations — Example 2 */}
-      <div className="mb-6 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3">
-          <h2 className="text-lg font-semibold text-stone-900">
-            Deciding between locations
-          </h2>
-          <p className="text-sm text-stone-600">
-            The more profitable site is highlighted.
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-180 text-sm">
-            <thead>
-              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                <th className="py-2 pr-2 font-semibold">Location</th>
-                <th className="w-30 py-2 pr-2 font-semibold">Annual fixed cost ($)</th>
-                <th className="w-28 py-2 pr-2 font-semibold">Variable cost / unit ($)</th>
-                <th className="w-28 py-2 pr-2 font-semibold">Demand (units / yr)</th>
-                <th className="w-26 py-2 pr-2 font-semibold">Selling price ($)</th>
-                <th className="w-28 py-2 pr-3 text-right font-semibold">Total revenue</th>
-                <th className="w-28 py-2 pr-3 text-right font-semibold">Total costs</th>
-                <th className="w-28 py-2 pr-3 text-right font-semibold">Profit</th>
-                <th className="w-16 py-2 font-semibold" aria-label="Winner flag" />
-                <th className="w-9 py-2" aria-label="Delete row" />
-              </tr>
-            </thead>
-            <tbody>
-              {siteRows.map(({ site: s, fin }) => {
-                const winner = bestProfit !== null && fin.profit === bestProfit
-                return (
-                  <tr
-                    key={s.id}
-                    className={[
-                      'border-b border-stone-100 last:border-0',
-                      winner ? 'bg-garnet-50/60' : '',
-                    ].join(' ')}
-                  >
-                    <td className="py-1 pr-2">
-                      <input
-                        type="text"
-                        value={s.name}
-                        placeholder="(location)"
-                        onChange={(e) => patchSite(s.id, { name: e.target.value })}
-                        aria-label="Site name"
-                        className={CELL_INPUT}
-                      />
-                    </td>
-                    <td className="py-1 pr-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step={100000}
-                        value={s.fixedCost}
-                        onChange={(e) =>
-                          setSiteNumber(s.id, 'fixedCost', Number(e.target.value))
-                        }
-                        aria-label={`Annual fixed cost for ${s.name || 'site'}`}
-                        className={`${CELL_INPUT} tabular-nums`}
-                      />
-                    </td>
-                    <td className="py-1 pr-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step={5}
-                        value={s.variableCost}
-                        onChange={(e) =>
-                          setSiteNumber(s.id, 'variableCost', Number(e.target.value))
-                        }
-                        aria-label={`Variable cost per unit for ${s.name || 'site'}`}
-                        className={`${CELL_INPUT} tabular-nums`}
-                      />
-                    </td>
-                    <td className="py-1 pr-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step={1000}
-                        value={s.demand}
-                        onChange={(e) =>
-                          setSiteNumber(s.id, 'demand', Number(e.target.value))
-                        }
-                        aria-label={`Forecasted demand for ${s.name || 'site'}`}
-                        className={`${CELL_INPUT} tabular-nums`}
-                      />
-                    </td>
-                    <td className="py-1 pr-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step={5}
-                        value={s.price}
-                        onChange={(e) =>
-                          setSiteNumber(s.id, 'price', Number(e.target.value))
-                        }
-                        aria-label={`Selling price for ${s.name || 'site'}`}
-                        className={`${CELL_INPUT} tabular-nums`}
-                      />
-                    </td>
-                    <td className="py-1 pr-3 text-right text-stone-700 tabular-nums">
-                      {fmtMoney(fin.totalRevenue)}
-                    </td>
-                    <td className="py-1 pr-3 text-right text-stone-700 tabular-nums">
-                      {fmtMoney(fin.totalCost)}
-                    </td>
-                    <td className="py-1 pr-3 text-right font-semibold text-stone-900 tabular-nums">
-                      {fmtMoney(fin.profit)}
-                    </td>
-                    <td className="py-1">
-                      {winner && (
-                        <span className="rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800">
-                          winner
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-1">
-                      <button
-                        onClick={() => deleteSite(s.id)}
-                        title={`Delete ${s.name || 'this site'}`}
-                        aria-label={`Delete ${s.name || 'site'}`}
-                        className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700"
-                      >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-2">
-          <button
-            onClick={addSite}
-            disabled={sites.length >= 6}
-            className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-40"
-          >
-            + Add location
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
