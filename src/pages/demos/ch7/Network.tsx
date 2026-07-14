@@ -55,6 +55,8 @@ function buildEdges(schedule: CpmSchedule, layout: NetworkLayout): Edge[] {
     id === 'START' ? layout.start : id === 'FINISH' ? layout.finish : layout.pos[id]
   const halfW = (id: string) =>
     id === 'START' || id === 'FINISH' ? PILL_W / 2 : NODE_W / 2
+  const halfH = (id: string) =>
+    id === 'START' || id === 'FINISH' ? PILL_H / 2 : NODE_H / 2
 
   const raw: { from: string; to: string }[] = []
   for (const a of schedule.activities) {
@@ -63,10 +65,16 @@ function buildEdges(schedule: CpmSchedule, layout: NetworkLayout): Edge[] {
     if (a.successors.length === 0) raw.push({ from: a.id, to: 'FINISH' })
   }
 
-  // group by endpoint to compute fan offsets, sorted by the far end's y
+  /** an edge between (near-)vertically stacked nodes connects top-to-bottom
+   *  instead of right-to-left, like J → K in the textbook figure */
+  const isVertical = (e: { from: string; to: string }) =>
+    Math.abs(centerOf(e.to).x - centerOf(e.from).x) < 40
+
+  // group HORIZONTAL edges by endpoint for fan offsets, sorted by far-end y
   const outgoing: Record<string, { to: string }[]> = {}
   const incoming: Record<string, { from: string }[]> = {}
   for (const e of raw) {
+    if (isVertical(e)) continue
     ;(outgoing[e.from] ??= []).push({ to: e.to })
     ;(incoming[e.to] ??= []).push({ from: e.from })
   }
@@ -78,6 +86,16 @@ function buildEdges(schedule: CpmSchedule, layout: NetworkLayout): Edge[] {
   return raw.map((e) => {
     const c1 = centerOf(e.from)
     const c2 = centerOf(e.to)
+    const critical = edgeIsCritical(e.from, e.to, schedule)
+    if (isVertical(e)) {
+      const up = c2.y < c1.y
+      return {
+        ...e,
+        critical,
+        p1: { x: c1.x, y: c1.y + (up ? -halfH(e.from) : halfH(e.from)) },
+        p2: { x: c2.x, y: c2.y + (up ? halfH(e.to) : -halfH(e.to)) },
+      }
+    }
     const outs = outgoing[e.from]
     const ins = incoming[e.to]
     const fromOff = spreadOffset(
@@ -92,7 +110,7 @@ function buildEdges(schedule: CpmSchedule, layout: NetworkLayout): Edge[] {
     )
     return {
       ...e,
-      critical: edgeIsCritical(e.from, e.to, schedule),
+      critical,
       p1: { x: c1.x + halfW(e.from), y: c1.y + fromOff },
       p2: { x: c2.x - halfW(e.to), y: c2.y + toOff },
     }

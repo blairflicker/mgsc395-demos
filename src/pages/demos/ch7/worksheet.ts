@@ -60,15 +60,19 @@ export async function downloadWorksheet(activities: ActivityInput[]) {
     for (const p of a.predecessors) edges.push({ from: p, to: a.id })
     if (!hasSuccessor.has(a.id)) edges.push({ from: a.id, to: 'FINISH' })
   }
+  const halfH = (id: string) => (id === 'START' || id === 'FINISH' ? PILL_H / 2 : NODE_H / 2)
   doc.setDrawColor(BLACK)
   doc.setLineWidth(0.9)
   for (const e of edges) {
     const c1 = centerOf(e.from)
     const c2 = centerOf(e.to)
-    const x1 = px(c1.x) + halfW(e.from)
-    const y1 = py(c1.y)
-    const x2 = px(c2.x) - halfW(e.to)
-    const y2 = py(c2.y)
+    // vertically stacked nodes connect top-to-bottom (like J -> K)
+    const vertical = Math.abs(c2.x - c1.x) < 40
+    const up = c2.y < c1.y
+    const x1 = vertical ? px(c1.x) : px(c1.x) + halfW(e.from)
+    const y1 = vertical ? py(c1.y) + (up ? -halfH(e.from) : halfH(e.from)) : py(c1.y)
+    const x2 = vertical ? px(c2.x) : px(c2.x) - halfW(e.to)
+    const y2 = vertical ? py(c2.y) + (up ? halfH(e.to) : -halfH(e.to)) : py(c2.y)
     doc.line(x1, y1, x2, y2)
     // arrowhead
     const angle = Math.atan2(y2 - y1, x2 - x1)

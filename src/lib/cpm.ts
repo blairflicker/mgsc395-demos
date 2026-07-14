@@ -255,12 +255,71 @@ export interface NetworkLayout {
 }
 
 /**
+ * Node positions matching the textbook's figure for the St. John's
+ * Hospital network: A's subtree across the top half (I / A–F–K lanes),
+ * C–G through the middle, B–D–H–J along the bottom with E below, and J
+ * sitting directly under K.
+ */
+const CLASS_POS: Record<string, LayoutPoint> = {
+  A: { x: 235, y: 195 },
+  B: { x: 235, y: 425 },
+  I: { x: 410, y: 75 },
+  F: { x: 410, y: 195 },
+  C: { x: 410, y: 310 },
+  D: { x: 410, y: 425 },
+  E: { x: 410, y: 530 },
+  G: { x: 585, y: 310 },
+  H: { x: 585, y: 425 },
+  J: { x: 760, y: 425 },
+  K: { x: 760, y: 195 },
+}
+const CLASS_LAYOUT_W = 980
+const CLASS_LAYOUT_H = 590
+
+/** true when every activity is a class activity and every precedence is a
+ *  class precedence — i.e. the project is St. John's or a piece of it
+ *  (activities hidden, edges removed), so the textbook positions apply */
+function isClassSubset(inputs: ActivityInput[]): boolean {
+  if (inputs.length === 0) return false
+  const classPreds: Record<string, Set<string>> = Object.fromEntries(
+    ST_JOHNS.map((a) => [a.id, new Set(a.predecessors)]),
+  )
+  return inputs.every((a) => {
+    const preds = classPreds[a.id]
+    return preds !== undefined && a.predecessors.every((p) => preds.has(p))
+  })
+}
+
+/**
  * Automatic left-to-right layered layout for an arbitrary project DAG.
  * Layer = longest chain of predecessors; within a layer, nodes are ordered
  * by the average vertical position of their predecessors to limit arrow
- * crossings. Shared by the on-screen network and the PDF worksheet.
+ * crossings. The class project (or any piece of it) instead uses the
+ * textbook figure's positions, so the on-screen network matches the book
+ * and nodes stay put as activities are hidden and shown. Shared by the
+ * on-screen network and the PDF worksheet.
  */
 export function layoutNetwork(inputs: ActivityInput[]): NetworkLayout {
+  if (isClassSubset(inputs)) {
+    const pos = Object.fromEntries(inputs.map((a) => [a.id, CLASS_POS[a.id]]))
+    const hasSuccessor = new Set(inputs.flatMap((a) => a.predecessors))
+    const sinks = inputs.filter((a) => !hasSuccessor.has(a.id))
+    const finishY =
+      sinks.length > 0
+        ? sinks.reduce((sum, a) => sum + pos[a.id].y, 0) / sinks.length
+        : CLASS_LAYOUT_H / 2
+    return {
+      pos,
+      start: { x: 60, y: 310 },
+      finish: { x: CLASS_LAYOUT_W - 60, y: finishY },
+      width: CLASS_LAYOUT_W,
+      height: CLASS_LAYOUT_H,
+    }
+  }
+  return autoLayout(inputs)
+}
+
+function autoLayout(inputs: ActivityInput[]): NetworkLayout {
   const byId = Object.fromEntries(inputs.map((a) => [a.id, a]))
   const layerOf: Record<string, number> = {}
   const layerFor = (id: string): number => {
