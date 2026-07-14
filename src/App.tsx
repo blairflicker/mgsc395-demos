@@ -4,6 +4,7 @@ import Launcher from './pages/Launcher'
 import ComingSoon from './pages/ComingSoon'
 import SuppBWaitingLines from './pages/demos/supp-b'
 import Ch7ProjectManagement from './pages/demos/ch7'
+import Ch8Forecasting from './pages/demos/ch8'
 import Ch13FacilityLocation from './pages/demos/ch13'
 
 /**
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/" element={<Launcher />} />
           <Route path="/supp-b" element={<SuppBWaitingLines />} />
           <Route path="/ch7" element={<Ch7ProjectManagement />} />
+          <Route path="/ch8" element={<Ch8Forecasting />} />
           <Route path="/ch13" element={<Ch13FacilityLocation />} />
           <Route path="/:slug" element={<ComingSoon />} />
         </Routes>

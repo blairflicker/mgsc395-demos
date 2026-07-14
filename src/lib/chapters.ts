@@ -114,7 +114,7 @@ export const chapters: Chapter[] = [
     title: 'Forecasting',
     description:
       'Naive, moving average, exponential smoothing, and regression forecasts — compared with MAD, MSE, and MAPE.',
-    status: 'coming-soon',
+    status: 'available',
     exam: 3,
   },
   {
