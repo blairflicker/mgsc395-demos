@@ -474,7 +474,9 @@ export default function Ch7ProjectManagement() {
                 above.
               </p>
               <div className="overflow-x-auto">
-                <div className="min-w-140 space-y-1">
+                {/* shared column tracks so the letters, sums, pills, and
+                    bars all line up perfectly across rows */}
+                <div className="grid min-w-140 grid-cols-[max-content_max-content_max-content_minmax(6rem,1fr)] gap-y-1">
                   {schedule.paths.map((p) => {
                     const key = pathKey(p.ids)
                     const selected = selectedPaths.has(key)
@@ -487,7 +489,7 @@ export default function Ch7ProjectManagement() {
                         onClick={() => togglePath(key)}
                         aria-pressed={selected}
                         className={[
-                          'flex w-full items-center gap-4 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                          'col-span-4 grid grid-cols-subgrid items-center gap-x-4 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
                           selected
                             ? p.critical
                               ? 'bg-garnet-50/80'
@@ -496,12 +498,11 @@ export default function Ch7ProjectManagement() {
                         ].join(' ')}
                       >
                         <span
-                          className={[
-                            'w-32 shrink-0',
+                          className={
                             p.critical
                               ? 'font-semibold text-stone-900'
-                              : 'text-stone-600',
-                          ].join(' ')}
+                              : 'text-stone-600'
+                          }
                         >
                           {p.ids.join('–')}
                         </span>
@@ -510,14 +511,14 @@ export default function Ch7ProjectManagement() {
                           <strong className="text-stone-900">{p.duration}</strong>{' '}
                           wks
                         </span>
-                        <span className="w-16 shrink-0 text-left">
+                        <span>
                           {p.critical && (
                             <span className="rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800">
                               critical
                             </span>
                           )}
                         </span>
-                        <span className="min-w-24 flex-1">
+                        <span>
                           <span className="block h-2 w-full rounded-full bg-stone-100">
                             <span
                               className="block h-2 rounded-full"
