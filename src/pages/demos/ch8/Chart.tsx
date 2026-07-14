@@ -1,11 +1,5 @@
 import { memo } from 'react'
-import {
-  COLOR_ACTUAL,
-  FUTURE_BAND,
-  GRID,
-  INK_MUTED,
-  INK_SOFT,
-} from './palette'
+import { COLOR_ACTUAL, FUTURE_BAND, INK_MUTED, INK_SOFT } from './palette'
 
 export interface ChartSeries {
   id: string
@@ -108,15 +102,16 @@ export const ForecastChart = memo(function ForecastChart({
             fill={FUTURE_BAND}
           />
 
-          {/* y gridlines */}
+          {/* y-axis labels with small ticks — no gridlines across the plot,
+              the overlaid forecast lines are busy enough on their own */}
           {yTicks.map((v) => (
             <g key={v}>
               <line
-                x1={M.left}
+                x1={M.left - 4}
                 y1={yPos(v)}
-                x2={M.left + PLOT_W}
+                x2={M.left}
                 y2={yPos(v)}
-                stroke={GRID}
+                stroke={INK_MUTED}
                 strokeWidth="1"
               />
               <text

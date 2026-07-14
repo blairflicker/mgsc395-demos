@@ -26,9 +26,9 @@ export const CLASS_DEMAND: number[] = [
 export const MIN_PERIODS = 4
 export const MAX_PERIODS = 24
 export const MIN_MA_N = 2
-export const MAX_MA_N = 6
-export const MIN_ALPHA = 0.05
-export const MAX_ALPHA = 0.95
+export const MAX_MA_N = 12
+export const MIN_ALPHA = 0
+export const MAX_ALPHA = 1
 
 /** f_t = d_(t−1); undefined for period 1. */
 export function naiveForecast(demand: number[]): (number | null)[] {
@@ -175,6 +175,39 @@ export function randomDemand(): number[] {
   const out: number[] = []
   for (let t = 0; t < T; t++) {
     const v = level + trend * t + (Math.random() * 2 - 1) * noise
+    out.push(Math.max(10, Math.round(v / 10) * 10))
+  }
+  return out
+}
+
+export interface GeneratorOptions {
+  periods: number
+  trend: 'none' | 'up' | 'down'
+  /** demand units added (up) or removed (down) per period */
+  trendStrength: number
+  seasonal: boolean
+  /** periods per seasonal cycle */
+  seasonLength: number
+}
+
+/**
+ * A demand series from a chosen data-generating process: random base
+ * level, the requested linear trend, an optional sinusoidal season with a
+ * random phase, and mild noise — rounded to tens, never below 10.
+ */
+export function generateDemand(opts: GeneratorOptions): number[] {
+  const level = 300 + Math.random() * 300
+  const direction = opts.trend === 'up' ? 1 : opts.trend === 'down' ? -1 : 0
+  const amplitude = opts.seasonal ? level * 0.35 : 0
+  const phase = Math.random() * 2 * Math.PI
+  const noise = level * 0.12
+  const out: number[] = []
+  for (let t = 0; t < opts.periods; t++) {
+    const v =
+      level +
+      direction * opts.trendStrength * t +
+      amplitude * Math.sin((2 * Math.PI * t) / Math.max(2, opts.seasonLength) + phase) +
+      (Math.random() * 2 - 1) * noise
     out.push(Math.max(10, Math.round(v / 10) * 10))
   }
   return out
