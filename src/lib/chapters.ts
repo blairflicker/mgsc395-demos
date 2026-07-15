@@ -86,7 +86,7 @@ export const chapters: Chapter[] = [
     title: 'Theory of Constraints',
     description:
       'Find the bottleneck and pick the product mix — traditional method vs. bottleneck method.',
-    status: 'coming-soon',
+    status: 'available',
     exam: 2,
   },
   {
