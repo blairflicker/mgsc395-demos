@@ -83,13 +83,9 @@ function BottleGlyph({
   )
 }
 
-/** "(a + b + … + z)" — the full sum when short, elided when long */
-const sumText = (values: number[]): string => {
-  const f = values.map((v) => v.toFixed(2))
-  return f.length <= 8
-    ? f.join(' + ')
-    : `${f.slice(0, 3).join(' + ')} + … + ${f[f.length - 1]}`
-}
+/** "a + b + … " with every value spelled out — the point is the arithmetic */
+const sumText = (values: number[]): string =>
+  values.map((v) => v.toFixed(2)).join(' + ')
 
 const VERDICT_STYLE: Record<VerdictStatus, { label: string; cls: string }> = {
   insufficient: { label: 'Too early to call', cls: 'text-stone-500' },
@@ -407,9 +403,9 @@ export default function Ch3QualityControl() {
               onAnimationEnd={() => bottleGone(b.id)}
               disabled={complete}
               aria-label="Take this bottle off the line"
-              className="ch3-belt-move absolute top-3 rounded transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-garnet-400 disabled:cursor-default"
+              className="ch3-belt-move absolute top-0 rounded px-2 py-3 transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-garnet-400 disabled:cursor-default"
               style={{
-                right: -48,
+                right: -56,
                 animationDuration: `${BELT_DUR}s`,
                 animationDelay: `${b.delay}s`,
               }}
@@ -562,7 +558,12 @@ export default function Ch3QualityControl() {
             The calculations
           </h2>
           <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
-            <table className="text-sm tabular-nums">
+            <div>
+              <h3 className="mb-1.5 max-w-56 text-sm font-semibold text-stone-800">
+                Factors for Calculating Three Sigma Limits for the X̄-Chart and
+                R-Chart
+              </h3>
+              <table className="text-sm tabular-nums">
               <thead>
                 <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
                   <th className="py-1.5 pr-5 font-semibold">n</th>
@@ -588,32 +589,39 @@ export default function Ch3QualityControl() {
                   </tr>
                 ))}
               </tbody>
-            </table>
-            <div className="space-y-1.5 text-sm text-stone-700 tabular-nums">
-              <p>
-                X̿ = ({sumText(subgroups.map((g) => g.mean))}) / {subgroups.length} ={' '}
-                {lim.xbarbar.toFixed(2)}
-              </p>
-              <p>
-                R̄ = ({sumText(subgroups.map((g) => g.range))}) / {subgroups.length} ={' '}
-                {lim.rbar.toFixed(2)}
-              </p>
-              <p>
-                UCL<sub>X̄</sub> = X̿ + A₂R̄ = {lim.xbarbar.toFixed(2)} + {f.A2} ×{' '}
-                {lim.rbar.toFixed(2)} = {lim.uclX.toFixed(2)}
-              </p>
-              <p>
-                LCL<sub>X̄</sub> = X̿ − A₂R̄ = {lim.xbarbar.toFixed(2)} − {f.A2} ×{' '}
-                {lim.rbar.toFixed(2)} = {lim.lclX.toFixed(2)}
-              </p>
-              <p>
-                UCL<sub>R</sub> = D₄R̄ = {f.D4} × {lim.rbar.toFixed(2)} ={' '}
-                {lim.uclR.toFixed(2)}
-              </p>
-              <p>
-                LCL<sub>R</sub> = D₃R̄ = {f.D3} × {lim.rbar.toFixed(2)} ={' '}
-                {lim.lclR.toFixed(2)}
-              </p>
+              </table>
+            </div>
+            <div className="min-w-0 flex-1 basis-80 space-y-4 text-sm text-stone-700 tabular-nums">
+              <div className="space-y-1.5">
+                <p className="break-words">
+                  X̿ = ({sumText(subgroups.map((g) => g.mean))}) /{' '}
+                  {subgroups.length} = {lim.xbarbar.toFixed(2)}
+                </p>
+                <p className="break-words">
+                  R̄ = ({sumText(subgroups.map((g) => g.range))}) /{' '}
+                  {subgroups.length} = {lim.rbar.toFixed(2)}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <p>
+                  UCL<sub>X̄</sub> = X̿ + A₂R̄ = {lim.xbarbar.toFixed(2)} + {f.A2} ×{' '}
+                  {lim.rbar.toFixed(2)} = {lim.uclX.toFixed(2)}
+                </p>
+                <p>
+                  LCL<sub>X̄</sub> = X̿ − A₂R̄ = {lim.xbarbar.toFixed(2)} − {f.A2} ×{' '}
+                  {lim.rbar.toFixed(2)} = {lim.lclX.toFixed(2)}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <p>
+                  UCL<sub>R</sub> = D₄R̄ = {f.D4} × {lim.rbar.toFixed(2)} ={' '}
+                  {lim.uclR.toFixed(2)}
+                </p>
+                <p>
+                  LCL<sub>R</sub> = D₃R̄ = {f.D3} × {lim.rbar.toFixed(2)} ={' '}
+                  {lim.lclR.toFixed(2)}
+                </p>
+              </div>
             </div>
           </div>
         </div>
