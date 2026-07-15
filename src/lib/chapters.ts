@@ -95,7 +95,7 @@ export const chapters: Chapter[] = [
     title: 'Linear Programming',
     description:
       'Translate a business problem into decision variables, an objective, and constraints — then solve it.',
-    status: 'coming-soon',
+    status: 'available',
     exam: 2,
   },
   {
