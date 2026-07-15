@@ -43,9 +43,21 @@ const freshLine = (dgp: Dgp, t: number): LineBottle[] =>
     delay: -(i * SPAWN_S),
   }))
 
-function BottleGlyph() {
+function BottleGlyph({
+  value = 0,
+  revealed = false,
+  className = 'h-14 w-10',
+}: {
+  value?: number
+  revealed?: boolean
+  className?: string
+}) {
+  const frac = Math.min(0.97, Math.max(0.06, (value - 11.3) / 1.4))
+  const bodyTop = 20
+  const bodyH = 38
+  const fillH = frac * bodyH
   return (
-    <svg viewBox="0 0 44 64" className="h-14 w-10" aria-hidden>
+    <svg viewBox="0 0 44 64" className={className} aria-hidden>
       <rect x="17" y="2" width="10" height="5" rx="1.5" fill="#57534e" />
       <path
         d="M18,7 L26,7 L26,12 L31,18 L31,58 Q31,61 28,61 L16,61 Q13,61 13,58 L13,18 L18,12 Z"
@@ -53,11 +65,30 @@ function BottleGlyph() {
         stroke="#a8a29e"
         strokeWidth="1.4"
       />
-      <text x="22" y="45" textAnchor="middle" fontSize="15" fontWeight="600" fill="#a8a29e">
-        ?
-      </text>
+      {revealed ? (
+        <rect
+          x="14.5"
+          y={bodyTop + (bodyH - fillH)}
+          width="15"
+          height={fillH}
+          fill="#0d9488"
+          fillOpacity="0.55"
+        />
+      ) : (
+        <text x="22" y="45" textAnchor="middle" fontSize="15" fontWeight="600" fill="#a8a29e">
+          ?
+        </text>
+      )}
     </svg>
   )
+}
+
+/** "(a + b + … + z)" — the full sum when short, elided when long */
+const sumText = (values: number[]): string => {
+  const f = values.map((v) => v.toFixed(2))
+  return f.length <= 8
+    ? f.join(' + ')
+    : `${f.slice(0, 3).join(' + ')} + … + ${f[f.length - 1]}`
 }
 
 const VERDICT_STYLE: Record<VerdictStatus, { label: string; cls: string }> = {
@@ -74,7 +105,7 @@ export default function Ch3QualityControl() {
   const [line, setLine] = useState<LineBottle[]>(() => freshLine(CLASS_DGP, 11))
   const [tray, setTray] = useState<number[]>([])
   const [showAnswers, setShowAnswers] = useState(true)
-  const [hoverBox, setHoverBox] = useState<number | null>(null)
+  const [selBox, setSelBox] = useState<number | null>(null)
   const idRef = useRef(1)
 
   useEffect(() => {
@@ -115,7 +146,7 @@ export default function Ch3QualityControl() {
     if (!complete) return
     setSubgroups((list) => [...list, makeSubgroup(`b${idRef.current++}`, tray)])
     setTray([])
-    setHoverBox(null)
+    setSelBox(null)
   }
 
   const autoSample = (count: number) => {
@@ -127,7 +158,7 @@ export default function Ch3QualityControl() {
       return next
     })
     setTray([])
-    setHoverBox(null)
+    setSelBox(null)
   }
 
   const changeDgp = (patch: Partial<Dgp>) => {
@@ -143,7 +174,7 @@ export default function Ch3QualityControl() {
     setSubgroups([])
     setLine(freshLine(next, 1))
     setTray([])
-    setHoverBox(null)
+    setSelBox(null)
   }
 
   const clearSamples = () => {
@@ -152,7 +183,7 @@ export default function Ch3QualityControl() {
     setSubgroups([])
     setLine(freshLine(next, 1))
     setTray([])
-    setHoverBox(null)
+    setSelBox(null)
   }
 
   // ── practice toolbar ────────────────────────────────────
@@ -171,7 +202,7 @@ export default function Ch3QualityControl() {
     setSubgroups(classSubgroups())
     setLine(freshLine(CLASS_DGP, 11))
     setTray([])
-    setHoverBox(null)
+    setSelBox(null)
     setShowAnswers(true)
   }
 
@@ -181,12 +212,14 @@ export default function Ch3QualityControl() {
     setSubgroups([])
     setLine(freshLine(d, 1))
     setTray([])
-    setHoverBox(null)
+    setSelBox(null)
     setShowAnswers(false)
   }
 
-  // the box whose contents are spelled out under the row
-  const detailIndex = hoverBox ?? (subgroups.length > 0 ? subgroups.length - 1 : null)
+  // the box whose contents are spelled out under the row: the clicked box,
+  // or the latest one when nothing is locked in
+  const locked = selBox !== null && selBox < subgroups.length ? selBox : null
+  const detailIndex = locked ?? (subgroups.length > 0 ? subgroups.length - 1 : null)
   const detail = detailIndex !== null ? subgroups[detailIndex] : null
 
   return (
@@ -389,29 +422,27 @@ export default function Ch3QualityControl() {
           <span className="text-xs font-semibold text-stone-500 uppercase">
             Current sample
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-start gap-1.5">
             {Array.from({ length: n }, (_, i) => (
               <span
                 key={i}
                 className={
                   i < tray.length
-                    ? 'flex h-12 w-8 items-center justify-center'
-                    : 'flex h-12 w-8 items-center justify-center rounded-lg border border-dashed border-stone-300'
+                    ? 'flex w-12 flex-col items-center'
+                    : 'flex h-16 w-12 flex-col items-center rounded-lg border border-dashed border-stone-300'
                 }
               >
                 {i < tray.length && (
-                  <svg viewBox="0 0 44 64" className="h-11 w-7" aria-hidden>
-                    <rect x="17" y="2" width="10" height="5" rx="1.5" fill="#57534e" />
-                    <path
-                      d="M18,7 L26,7 L26,12 L31,18 L31,58 Q31,61 28,61 L16,61 Q13,61 13,58 L13,18 L18,12 Z"
-                      fill="#fafaf9"
-                      stroke="#a8a29e"
-                      strokeWidth="1.4"
+                  <>
+                    <BottleGlyph
+                      value={tray[i]}
+                      revealed={complete}
+                      className="h-12 w-8"
                     />
-                    <text x="22" y="45" textAnchor="middle" fontSize="15" fontWeight="600" fill="#a8a29e">
-                      ?
-                    </text>
-                  </svg>
+                    <span className="block h-4 text-center text-[11px] text-stone-600 tabular-nums">
+                      {complete ? tray[i].toFixed(2) : ''}
+                    </span>
+                  </>
                 )}
               </span>
             ))}
@@ -449,14 +480,17 @@ export default function Ch3QualityControl() {
           <>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {subgroups.map((g, i) => (
-                <div
+                <button
                   key={g.id}
-                  onMouseEnter={() => setHoverBox(i)}
-                  onMouseLeave={() => setHoverBox(null)}
+                  onClick={() => setSelBox((s) => (s === i ? null : i))}
+                  aria-pressed={locked === i}
+                  aria-label={`Inspect box ${i + 1}`}
                   className={
-                    detailIndex === i
-                      ? 'min-w-24 shrink-0 rounded-lg border border-garnet-300 bg-garnet-50/40 px-2.5 py-2 text-center'
-                      : 'min-w-24 shrink-0 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-2 text-center'
+                    locked === i
+                      ? 'min-w-24 shrink-0 rounded-lg border border-garnet-400 bg-garnet-50/60 px-2.5 py-2 text-center ring-2 ring-garnet-200'
+                      : detailIndex === i
+                        ? 'min-w-24 shrink-0 rounded-lg border border-garnet-300 bg-garnet-50/30 px-2.5 py-2 text-center hover:border-garnet-400'
+                        : 'min-w-24 shrink-0 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-2 text-center hover:border-garnet-300'
                   }
                 >
                   <div className="text-xs font-semibold text-stone-500">#{i + 1}</div>
@@ -466,15 +500,20 @@ export default function Ch3QualityControl() {
                   <div className="text-sm text-stone-800 tabular-nums">
                     R {g.range.toFixed(2)}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
             <div className="mt-3 min-h-10 border-t border-stone-100 pt-2 text-xs text-stone-600 tabular-nums">
               {detail && (
                 <>
                   <div>
-                    Box #{(detailIndex ?? 0) + 1} —{' '}
-                    {detail.values.map((v) => v.toFixed(2)).join(', ')}
+                    <span className="font-semibold text-stone-700">
+                      Box #{(detailIndex ?? 0) + 1}
+                    </span>{' '}
+                    <span className="text-stone-400">
+                      {locked !== null ? '(selected — click it again to release)' : '(latest)'}
+                    </span>{' '}
+                    — {detail.values.map((v) => v.toFixed(2)).join(', ')}
                   </div>
                   <div>
                     X̄ = ({detail.values.map((v) => v.toFixed(2)).join(' + ')}) /{' '}
@@ -515,6 +554,70 @@ export default function Ch3QualityControl() {
           </div>
         )}
       </div>
+
+      {/* The hand calculations behind the charts */}
+      {showAnswers && lim !== null && (
+        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+          <h2 className="mb-3 text-lg font-semibold text-stone-900">
+            The calculations
+          </h2>
+          <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
+            <table className="text-sm tabular-nums">
+              <thead>
+                <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                  <th className="py-1.5 pr-5 font-semibold">n</th>
+                  <th className="py-1.5 pr-5 text-right font-semibold">A₂</th>
+                  <th className="py-1.5 pr-5 text-right font-semibold">D₃</th>
+                  <th className="py-1.5 text-right font-semibold">D₄</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(FACTORS).map(([size, fac]) => (
+                  <tr
+                    key={size}
+                    className={
+                      Number(size) === n
+                        ? 'border-b border-stone-100 bg-garnet-50 font-semibold text-garnet-900'
+                        : 'border-b border-stone-100 text-stone-700 last:border-0'
+                    }
+                  >
+                    <td className="py-0.5 pr-5 pl-1">{size}</td>
+                    <td className="py-0.5 pr-5 text-right">{fac.A2.toFixed(3)}</td>
+                    <td className="py-0.5 pr-5 text-right">{fac.D3.toFixed(3)}</td>
+                    <td className="py-0.5 pr-1 text-right">{fac.D4.toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="space-y-1.5 text-sm text-stone-700 tabular-nums">
+              <p>
+                X̿ = ({sumText(subgroups.map((g) => g.mean))}) / {subgroups.length} ={' '}
+                {lim.xbarbar.toFixed(2)}
+              </p>
+              <p>
+                R̄ = ({sumText(subgroups.map((g) => g.range))}) / {subgroups.length} ={' '}
+                {lim.rbar.toFixed(2)}
+              </p>
+              <p>
+                UCL<sub>X̄</sub> = X̿ + A₂R̄ = {lim.xbarbar.toFixed(2)} + {f.A2} ×{' '}
+                {lim.rbar.toFixed(2)} = {lim.uclX.toFixed(2)}
+              </p>
+              <p>
+                LCL<sub>X̄</sub> = X̿ − A₂R̄ = {lim.xbarbar.toFixed(2)} − {f.A2} ×{' '}
+                {lim.rbar.toFixed(2)} = {lim.lclX.toFixed(2)}
+              </p>
+              <p>
+                UCL<sub>R</sub> = D₄R̄ = {f.D4} × {lim.rbar.toFixed(2)} ={' '}
+                {lim.uclR.toFixed(2)}
+              </p>
+              <p>
+                LCL<sub>R</sub> = D₃R̄ = {f.D3} × {lim.rbar.toFixed(2)} ={' '}
+                {lim.lclR.toFixed(2)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
