@@ -1,161 +1,122 @@
 /**
- * Chapter 1 productivity measures — pure computation, no React.
+ * Chapter 1 productivity — the transformation model, pure computation.
  *
- * Conventions match the Chapter 1 lecture exactly:
- * - Every productivity measure is output over input; only the input
- *   changes between measures.
- * - Single-factor (labor): labor-hours = workers × hours; productivity
- *   = output / labor-hours; value productivity = output × unit value /
- *   labor-hours.
- * - Multifactor: total input = labor + materials + overhead dollars;
- *   MFP = output / total input (units per input $); unit cost is the
- *   reciprocal, total input / output; revenue = output × price; value
- *   MFP = revenue / total input ($ out per $ in).
- * - Class single-factor data (the carpet crew): 4 workers × 8 h =
- *   32 labor-hours; 720 / 32 = 22.5 sq yd per labor-hour;
- *   720 × $8 / 32 = $180 per labor-hour.
- * - Class multifactor data (the factory): total input = 1,000 + 520 +
- *   2,000 = $3,520; MFP = 7,040 / 3,520 = 2.0 units per $; unit cost =
- *   3,520 / 7,040 = $0.50; revenue = 7,040 × $2 = $14,080; value MFP =
- *   14,080 / 3,520 = 4.0.
+ * A transformation is one output produced from any number of inputs, each
+ * classified as labor, materials, or overhead. Every row carries a
+ * quantity, a unit name, and optionally a dollars-per-unit value, and can
+ * be *shown* either in its native units or in dollars. Productivity is
+ * always output over input:
+ * - If every input shown counts in dollars, the denominator sums and the
+ *   ratio simplifies (class factory: 7,040 units / $3,520 = 2.0 units per
+ *   input $; with the output in dollars, $14,080 / $3,520 = 4.0).
+ * - A single input simplifies even in native units (class carpet crew:
+ *   720 sq yd / 32 labor-hours = 22.5 sq yd per labor-hour, or $5,760 /
+ *   32 = $180 per labor-hour).
+ * - Mixed units don't simplify — the fraction itself is the productivity.
  */
 
-export interface SingleFactorCase {
-  /** crew size, workers */
-  workers: number
-  /** hours worked per worker */
-  hours: number
-  /** units produced (sq yd of carpet installed) */
-  output: number
-  /** what one unit of output is, e.g. 'sq yd of carpet' */
-  outputLabel: string
-  /** dollars of value per unit of output */
-  unitValue: number
+export type InputKind = 'labor' | 'materials' | 'overhead'
+
+export interface InputRow {
+  /** stable key */
+  id: string
+  name: string
+  kind: InputKind
+  qty: number
+  /** unit name, e.g. "lb", "labor-hours", "month" */
+  unit: string
+  /** $ per unit; null when the input has no dollar figure */
+  dollarsPerUnit: number | null
+  /** show this row in dollars (needs dollarsPerUnit) instead of units */
+  showDollars: boolean
 }
 
-/** The carpet-crew problem from the Chapter 1 slides. */
-export const CLASS_SINGLE: SingleFactorCase = {
-  workers: 4,
-  hours: 8,
-  output: 720,
-  outputLabel: 'sq yd of carpet',
-  unitValue: 8,
+export interface OutputRow {
+  name: string
+  qty: number
+  unit: string
+  dollarsPerUnit: number | null
+  showDollars: boolean
 }
 
-export const laborHours = (c: SingleFactorCase): number => c.workers * c.hours
-
-export const unitsPerLaborHour = (c: SingleFactorCase): number =>
-  c.output / laborHours(c)
-
-export const valuePerLaborHour = (c: SingleFactorCase): number =>
-  (c.output * c.unitValue) / laborHours(c)
-
-export interface MultiFactorCase {
-  /** monthly output, units */
-  output: number
-  /** labor cost, $/month */
-  labor: number
-  /** materials cost, $/month */
-  materials: number
-  /** overhead, $/month */
-  overhead: number
-  /** selling price, $/unit */
-  price: number
+export interface Transformation {
+  output: OutputRow
+  inputs: InputRow[]
 }
 
-/** The factory problem from the Chapter 1 slides. */
-export const CLASS_MULTI: MultiFactorCase = {
-  output: 7040,
-  labor: 1000,
-  materials: 520,
-  overhead: 2000,
-  price: 2,
+/** The factory problem from the Chapter 1 slides (monthly figures). */
+export const CLASS_CASE: Transformation = {
+  output: { name: 'Widgets', qty: 7040, unit: 'units', dollarsPerUnit: 2, showDollars: false },
+  inputs: [
+    { id: 'c1', name: 'Labor', kind: 'labor', qty: 1, unit: 'month', dollarsPerUnit: 1000, showDollars: true },
+    { id: 'c2', name: 'Materials', kind: 'materials', qty: 1, unit: 'month', dollarsPerUnit: 520, showDollars: true },
+    { id: 'c3', name: 'Overhead', kind: 'overhead', qty: 1, unit: 'month', dollarsPerUnit: 2000, showDollars: true },
+  ],
 }
 
-export const totalInput = (c: MultiFactorCase): number =>
-  c.labor + c.materials + c.overhead
+/** qty × $/unit, or null when the row has no dollar figure */
+export const totalDollars = (row: {
+  qty: number
+  dollarsPerUnit: number | null
+}): number | null => (row.dollarsPerUnit === null ? null : row.qty * row.dollarsPerUnit)
 
-/** multifactor productivity, units per input dollar */
-export const mfp = (c: MultiFactorCase): number => c.output / totalInput(c)
+interface Template {
+  output: OutputRow
+  inputs: Omit<InputRow, 'id'>[]
+}
 
-/** the reciprocal view — input dollars per unit */
-export const unitCost = (c: MultiFactorCase): number => totalInput(c) / c.output
+/** jitter a quantity ±30%, rounded to a clean value near its magnitude */
+const jitter = (v: number): number => {
+  const raw = v * (0.7 + Math.random() * 0.6)
+  const pow = Math.pow(10, Math.max(0, Math.floor(Math.log10(raw)) - 1))
+  return Math.max(1, Math.round(raw / pow) * pow)
+}
 
-export const revenue = (c: MultiFactorCase): number => c.output * c.price
+const TEMPLATES: Template[] = [
+  {
+    // the class single-factor story: a crew with hours but no wage given
+    output: { name: 'Carpet', qty: 720, unit: 'sq yd', dollarsPerUnit: 8, showDollars: false },
+    inputs: [
+      { name: 'Installer labor', kind: 'labor', qty: 32, unit: 'labor-hours', dollarsPerUnit: null, showDollars: false },
+    ],
+  },
+  {
+    output: { name: 'Bread', qty: 1200, unit: 'loaves', dollarsPerUnit: 4.5, showDollars: false },
+    inputs: [
+      { name: 'Flour', kind: 'materials', qty: 800, unit: 'lb', dollarsPerUnit: 0.4, showDollars: false },
+      { name: 'Bakers', kind: 'labor', qty: 160, unit: 'hours', dollarsPerUnit: 18, showDollars: false },
+      { name: 'Oven & rent', kind: 'overhead', qty: 1, unit: 'month', dollarsPerUnit: 900, showDollars: true },
+    ],
+  },
+  {
+    output: { name: 'Precast panels', qty: 40, unit: 'panels', dollarsPerUnit: 250, showDollars: false },
+    inputs: [
+      { name: 'Concrete', kind: 'materials', qty: 7000, unit: 'lb', dollarsPerUnit: 0.05, showDollars: false },
+      { name: 'Crew', kind: 'labor', qty: 90, unit: 'hours', dollarsPerUnit: 25, showDollars: false },
+      { name: 'Overhead', kind: 'overhead', qty: 1, unit: 'month', dollarsPerUnit: 3000, showDollars: true },
+    ],
+  },
+  {
+    output: { name: 'Haircuts', qty: 300, unit: 'cuts', dollarsPerUnit: 35, showDollars: false },
+    inputs: [
+      { name: 'Stylists', kind: 'labor', qty: 250, unit: 'hours', dollarsPerUnit: 22, showDollars: false },
+      { name: 'Products', kind: 'materials', qty: 300, unit: 'bottles', dollarsPerUnit: 1.5, showDollars: false },
+      { name: 'Chair rent', kind: 'overhead', qty: 1, unit: 'month', dollarsPerUnit: 1100, showDollars: true },
+    ],
+  },
+]
 
-/** value-based multifactor productivity, $ out per $ in */
-export const valueMfp = (c: MultiFactorCase): number =>
-  revenue(c) / totalInput(c)
+let seq = 1
 
-/**
- * A random carpet crew: 2–6 workers on 4–10 hour days. The productivity
- * rate is picked first (one decimal place, 8–35 sq yd per labor-hour) and
- * output derived from it, regenerating until the sq yd come out whole —
- * so the answer always reads cleanly. Unit value is $2–$15 whole dollars.
- */
-export function randomSingle(): SingleFactorCase {
-  for (let attempt = 0; attempt < 2000; attempt++) {
-    const workers = 2 + Math.floor(Math.random() * 5)
-    const hours = 4 + Math.floor(Math.random() * 7)
-    const rate = (80 + Math.floor(Math.random() * 271)) / 10
-    const output = rate * workers * hours
-    if (!Number.isInteger(output)) continue
-    return {
-      workers,
-      hours,
-      output,
-      outputLabel: 'sq yd of carpet',
-      unitValue: 2 + Math.floor(Math.random() * 14),
-    }
+/** a random transformation: one template with jittered quantities */
+export function randomCase(): Transformation {
+  const t = TEMPLATES[Math.floor(Math.random() * TEMPLATES.length)]
+  return {
+    output: { ...t.output, qty: jitter(t.output.qty) },
+    inputs: t.inputs.map((inp) => ({
+      ...inp,
+      id: `r${seq++}`,
+      qty: inp.unit === 'month' ? inp.qty : jitter(inp.qty),
+    })),
   }
-  // practically unreachable
-  return { ...CLASS_SINGLE }
-}
-
-/**
- * MFP values whose reciprocal (the unit cost) is still clean money —
- * $2.00, $1.25, $1.00, $0.50, $0.40, $0.25 respectively.
- */
-const MFP_CHOICES = [0.5, 0.8, 1, 2, 2.5, 4] as const
-
-const PRICE_CHOICES = [
-  0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 12,
-] as const
-
-const near = (v: number, target: number) => Math.abs(v - target) < 1e-6
-
-/**
- * A random factory: MFP is picked first, total input is a round number
- * ($1,000–$20,000 to the nearest $10) split into labor / materials /
- * overhead sums that land on $10 and add up exactly, and the price is a
- * clean value chosen so value MFP falls in [1.2, 6] with at most two
- * decimals and a whole-dollar revenue. Regenerates until every number
- * reads cleanly.
- */
-export function randomMulti(): MultiFactorCase {
-  for (let attempt = 0; attempt < 2000; attempt++) {
-    const m = MFP_CHOICES[Math.floor(Math.random() * MFP_CHOICES.length)]
-    const total = 10 * (100 + Math.floor(Math.random() * 1901))
-    const output = Math.round(m * total)
-    if (!near(output / total, m)) continue
-    const labor = 10 * Math.round((total * (0.15 + Math.random() * 0.3)) / 10)
-    const materials =
-      10 * Math.round((total * (0.1 + Math.random() * 0.25)) / 10)
-    const overhead = total - labor - materials
-    if (labor < 100 || materials < 100 || overhead < 100) continue
-    const prices = PRICE_CHOICES.filter((p) => {
-      const v = m * p
-      return (
-        v >= 1.2 - 1e-6 &&
-        v <= 6 + 1e-6 &&
-        near(v * 100, Math.round(v * 100)) &&
-        near(output * p, Math.round(output * p))
-      )
-    })
-    if (prices.length === 0) continue
-    const price = prices[Math.floor(Math.random() * prices.length)]
-    return { output, labor, materials, overhead, price }
-  }
-  // practically unreachable
-  return { ...CLASS_MULTI }
 }
