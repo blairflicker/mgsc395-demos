@@ -55,7 +55,7 @@ export const ForecastChart = memo(function ForecastChart({
   const yStep = niceStep(yMax / 4)
   const yTicks: number[] = []
   for (let v = yStep; v <= yMax; v += yStep) yTicks.push(v)
-  const xLabelEvery = pMax > 16 ? 2 : 1
+  const xLabelEvery = pMax > 32 ? 4 : pMax > 16 ? 2 : 1
 
   const actualPts = demand.map((d, i) => ({ x: xPos(i + 1), y: yPos(d) }))
 

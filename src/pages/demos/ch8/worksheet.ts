@@ -4,14 +4,17 @@ import {
   metricsFrom,
   movingAverageForecast,
   naiveForecast,
+  regressionFit,
+  regressionForecast,
 } from '../../../lib/forecast'
 
 /**
  * Printable forecasting worksheet in black and white: a dot plot of the
- * demand series to eyeball, plus the demand table with blank Naive,
- * MA(3), and ES(α) forecast columns and blank MAD/MSE/MAPE rows to fill
- * in (or everything filled, for the solutions version). Both versions
- * describe the identical problem.
+ * demand series with the least-squares line drawn through it (equation
+ * given, since fitting it is not hand work), plus the demand table with
+ * blank Naive, MA(3), ES(α), and Regression forecast columns and blank
+ * MAD/MSE/MAPE rows to fill in (or everything filled, for the solutions
+ * version). Both versions describe the identical problem.
  *
  * jsPDF is imported lazily so it stays out of the main bundle.
  */
@@ -38,6 +41,7 @@ export async function downloadWorksheet(
   const FAINT = 215
 
   const T = demand.length
+  const fit = regressionFit(demand)
   const methods = [
     { label: 'Naive', forecasts: naiveForecast(demand) },
     { label: 'MA(3)', forecasts: movingAverageForecast(demand, 3) },
@@ -45,6 +49,7 @@ export async function downloadWorksheet(
       label: `ES (alpha = ${alpha.toFixed(2)})`,
       forecasts: expSmoothingForecast(demand, alpha),
     },
+    { label: 'Regression', forecasts: regressionForecast(demand) },
   ]
   const metrics = methods.map((m) => metricsFrom(errorRows(demand, m.forecasts)))
 
@@ -59,14 +64,17 @@ export async function downloadWorksheet(
     MARGIN,
     46,
   )
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(GRAY)
-  doc.text(
-    'Error E_t = f_t - d_t · MAD = mean |E_t| · MSE = mean E_t² · MAPE = mean |E_t| / d_t',
-    MARGIN,
-    62,
-  )
+  if (fit) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(GRAY)
+    const sign = fit.intercept >= 0 ? '+' : '-'
+    doc.text(
+      `Regression line: f_t = ${fit.slope.toFixed(1)} t ${sign} ${Math.abs(fit.intercept).toFixed(1)}`,
+      MARGIN,
+      62,
+    )
+  }
 
   // ── dot plot of the demand series ─────────────────────────
   const plot = { x: MARGIN + 26, y: 84, w: PAGE_W - 2 * MARGIN - 26, h: 150 }
@@ -97,23 +105,44 @@ export async function downloadWorksheet(
     doc.text(String(t), px(t), plot.y + plot.h + 11, { align: 'center' })
   }
   doc.text('period', plot.x + plot.w / 2, plot.y + plot.h + 22, { align: 'center' })
+  // the least-squares line, dashed, clipped to the plot area
+  if (fit) {
+    const at = (t: number) => fit.slope * t + fit.intercept
+    let t1 = 1
+    let t2 = T
+    if (fit.slope !== 0) {
+      const tAt = (v: number) => (v - fit.intercept) / fit.slope
+      const [tLo, tHi] = fit.slope > 0 ? [tAt(0), tAt(yTop)] : [tAt(yTop), tAt(0)]
+      t1 = Math.max(t1, tLo)
+      t2 = Math.min(t2, tHi)
+    } else if (fit.intercept < 0 || fit.intercept > yTop) {
+      t2 = t1 - 1
+    }
+    if (t1 < t2) {
+      doc.setDrawColor(GRAY)
+      doc.setLineWidth(1)
+      doc.setLineDashPattern([4, 3], 0)
+      doc.line(px(t1), py(at(t1)), px(t2), py(at(t2)))
+      doc.setLineDashPattern([], 0)
+    }
+  }
   doc.setDrawColor(BLACK)
   for (let t = 1; t <= T; t++) {
     doc.setFillColor(BLACK, BLACK, BLACK)
     doc.circle(px(t), py(demand[t - 1]), 2.4, 'F')
   }
 
-  // ── the table ─────────────────────────────────────────────
+  // ── the table — flows onto extra pages when the series is long ──
   const cols: { label: string; w: number }[] = [
     { label: 'Period', w: 52 },
     { label: 'Demand', w: 64 },
-    ...methods.map((m) => ({ label: m.label, w: 110 })),
+    ...methods.map((m) => ({ label: m.label, w: 95 })),
   ]
   const tableW = cols.reduce((s, c) => s + c.w, 0)
   const tx0 = (PAGE_W - tableW) / 2
   const tableTop = plot.y + plot.h + 44
-  // T demand rows + the next-period row + 3 metric rows + the header
-  const rowH = Math.min(19, (PAGE_H - MARGIN - tableTop) / (T + 5))
+  const rowH = 19
+  const bottomLimit = PAGE_H - MARGIN
 
   const colX: number[] = []
   {
@@ -129,21 +158,44 @@ export async function downloadWorksheet(
     else doc.text(value, colX[col] + 6, y)
   }
 
-  // header row
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8)
-  doc.setTextColor(BLACK)
-  cols.forEach((c, i) => cell(c.label, i, tableTop + rowH - 6, i === 0 ? 'left' : 'right'))
-  doc.setDrawColor(BLACK)
-  doc.setLineWidth(0.9)
-  doc.line(tx0, tableTop + rowH, tx0 + tableW, tableTop + rowH)
-
   const fmt1 = (v: number) => v.toFixed(1)
 
+  /** the bold header row at y; returns the y where data rows start */
+  const headerRow = (y: number): number => {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(BLACK)
+    cols.forEach((c, i) => cell(c.label, i, y + rowH - 6, i === 0 ? 'left' : 'right'))
+    doc.setDrawColor(BLACK)
+    doc.setLineWidth(0.9)
+    doc.line(tx0, y + rowH, tx0 + tableW, y + rowH)
+    doc.setFont('helvetica', 'normal')
+    return y + rowH
+  }
+
+  let segTop = tableTop + 2
+  let rowY = headerRow(tableTop)
+  const verticalRules = () => {
+    doc.setDrawColor(LIGHT)
+    doc.setLineWidth(0.5)
+    let vx = tx0
+    for (const c of [...cols, { w: 0 }]) {
+      doc.line(vx, segTop, vx, rowY)
+      vx += c.w
+    }
+  }
+  /** start a fresh page (repeating the header) unless `need` more points fit */
+  const ensureRoom = (need: number) => {
+    if (rowY + need <= bottomLimit) return
+    verticalRules()
+    doc.addPage()
+    segTop = MARGIN + 2
+    rowY = headerRow(MARGIN)
+  }
+
   // demand rows 1..T plus the next-period row T+1
-  doc.setFont('helvetica', 'normal')
   for (let t = 1; t <= T + 1; t++) {
-    const rowY = tableTop + rowH * t
+    ensureRoom(rowH)
     doc.setDrawColor(LIGHT)
     doc.setLineWidth(0.5)
     doc.line(tx0, rowY + rowH, tx0 + tableW, rowY + rowH)
@@ -156,13 +208,14 @@ export async function downloadWorksheet(
       if (f === null || f === undefined) cell('—', 2 + i, textY)
       else if (solution) cell(fmt1(f), 2 + i, textY)
     })
+    rowY += rowH
   }
 
-  // metric rows
-  const metricTop = tableTop + rowH * (T + 2)
+  // metric rows, kept together
+  ensureRoom(rowH * 3)
   doc.setDrawColor(BLACK)
   doc.setLineWidth(0.9)
-  doc.line(tx0, metricTop, tx0 + tableW, metricTop)
+  doc.line(tx0, rowY, tx0 + tableW, rowY)
   doc.setFont('helvetica', 'bold')
   const metricRows: { label: string; fill: (i: number) => string }[] = [
     {
@@ -187,8 +240,7 @@ export async function downloadWorksheet(
       },
     },
   ]
-  metricRows.forEach((row, r) => {
-    const rowY = metricTop + rowH * r
+  metricRows.forEach((row) => {
     doc.setDrawColor(LIGHT)
     doc.setLineWidth(0.5)
     doc.line(tx0, rowY + rowH, tx0 + tableW, rowY + rowH)
@@ -196,17 +248,9 @@ export async function downloadWorksheet(
     const textY = rowY + rowH - 6
     cell(row.label, 0, textY, 'left')
     methods.forEach((_, i) => cell(row.fill(i), 2 + i, textY))
+    rowY += rowH
   })
-
-  // vertical rules
-  const tableBottom = metricTop + rowH * 3
-  doc.setDrawColor(LIGHT)
-  doc.setLineWidth(0.5)
-  let vx = tx0
-  for (const c of [...cols, { w: 0 }]) {
-    doc.line(vx, tableTop + 2, vx, tableBottom)
-    vx += c.w
-  }
+  verticalRules()
 
   doc.save(
     solution ? 'forecasting-worksheet-solutions.pdf' : 'forecasting-worksheet.pdf',

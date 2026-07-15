@@ -106,19 +106,25 @@ export default function Ch8Forecasting() {
     es: false,
     regression: false,
   })
-  const [openCalc, setOpenCalc] = useState<Record<MethodId, boolean>>({
-    naive: false,
-    ma: false,
-    es: false,
-    regression: false,
-  })
+  const [calcFor, setCalcFor] = useState<MethodId | null>(null)
+  const [dataOpen, setDataOpen] = useState(true)
   const [generator, setGenerator] = useState<GeneratorOptions>({
     periods: 12,
     trend: 'up',
     trendStrength: 25,
     seasonal: false,
     seasonLength: 4,
+    variability: 10,
   })
+
+  useEffect(() => {
+    if (calcFor === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCalcFor(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [calcFor])
 
   useEffect(() => {
     document.title = 'Forecasting · MGSC 395'
@@ -226,9 +232,6 @@ export default function Ch8Forecasting() {
   const toggleWork = (id: MethodId) => {
     setOpenWork((w) => ({ ...w, [id]: !w[id] }))
   }
-  const toggleCalc = (id: MethodId) => {
-    setOpenCalc((w) => ({ ...w, [id]: !w[id] }))
-  }
 
   const generate = () => {
     setRows(generateDemand(generator).map((d, i) => ({ id: `g${i + 1}`, demand: d })))
@@ -279,79 +282,7 @@ export default function Ch8Forecasting() {
         </button>
       </div>
 
-      {/* Demand table editor — the data comes first */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3">
-          <h2 className="text-lg font-semibold text-stone-900">The demand</h2>
-          <p className="text-sm text-stone-600">
-            Click a cell to edit — everything recomputes as you type.
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full max-w-xs min-w-56 text-sm">
-            <thead>
-              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                <th className="w-20 py-2 pr-2 font-semibold">Period</th>
-                <th className="w-32 py-2 pr-2 font-semibold">Demand</th>
-                <th className="w-9 py-2" aria-label="Delete row" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.id} className="border-b border-stone-100 last:border-0">
-                  <td className="py-1 pr-2 font-semibold text-stone-800 tabular-nums">
-                    {i + 1}
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step={10}
-                      value={r.demand}
-                      onChange={(e) => setDemand(r.id, Number(e.target.value))}
-                      aria-label={`Demand for period ${i + 1}`}
-                      className={`${CELL_INPUT} tabular-nums`}
-                    />
-                  </td>
-                  <td className="py-1">
-                    <button
-                      onClick={() => deleteRow(r.id)}
-                      disabled={rows.length <= MIN_PERIODS}
-                      title={
-                        rows.length <= MIN_PERIODS
-                          ? `Keep at least ${MIN_PERIODS} periods`
-                          : `Delete period ${i + 1}`
-                      }
-                      aria-label={`Delete period ${i + 1}`}
-                      className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-stone-400"
-                    >
-                      <TrashIcon />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            onClick={addRow}
-            disabled={rows.length >= MAX_PERIODS}
-            className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-40"
-          >
-            + Add row
-          </button>
-          <button
-            onClick={downloadCsv}
-            disabled={rows.length === 0}
-            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-          >
-            Download CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Data-generating process */}
+      {/* Data-generating process — where the data comes from */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <h2 className="mb-3 text-lg font-semibold text-stone-900">
           Generate demand data
@@ -465,6 +396,27 @@ export default function Ch8Forecasting() {
               className="w-20 rounded border border-stone-300 bg-white px-2 py-1.5 text-sm tabular-nums focus:border-garnet-400 focus:outline-none disabled:opacity-40"
             />
           </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
+              Variability
+            </span>
+            <span className="flex items-center gap-2">
+              <input
+                type="range"
+                min={0}
+                max={40}
+                step={5}
+                value={generator.variability}
+                onChange={(e) =>
+                  setGenerator((g) => ({ ...g, variability: Number(e.target.value) }))
+                }
+                className="w-28 accent-garnet-700"
+              />
+              <span className="w-14 text-sm text-stone-600 tabular-nums">
+                ± {generator.variability}%
+              </span>
+            </span>
+          </label>
           <button
             onClick={generate}
             className="rounded-lg bg-garnet-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-garnet-700"
@@ -472,6 +424,93 @@ export default function Ch8Forecasting() {
             Generate data
           </button>
         </div>
+      </div>
+
+      {/* Demand table editor */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <div className={dataOpen ? 'mb-3 flex items-start justify-between gap-3' : 'flex items-start justify-between gap-3'}>
+          <div>
+            <h2 className="text-lg font-semibold text-stone-900">The demand</h2>
+            <p className="text-sm text-stone-600">
+              {dataOpen
+                ? 'Click a cell to edit — everything recomputes as you type.'
+                : `${rows.length} periods`}
+            </p>
+          </div>
+          <button
+            onClick={() => setDataOpen((v) => !v)}
+            aria-expanded={dataOpen}
+            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+          >
+            {dataOpen ? 'Collapse' : 'Expand'}
+          </button>
+        </div>
+        {dataOpen && (
+        <>
+        <div className="overflow-x-auto">
+          <table className="w-full max-w-xs min-w-56 text-sm">
+            <thead>
+              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                <th className="w-20 py-2 pr-2 font-semibold">Period</th>
+                <th className="w-32 py-2 pr-2 font-semibold">Demand</th>
+                <th className="w-9 py-2" aria-label="Delete row" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.id} className="border-b border-stone-100 last:border-0">
+                  <td className="py-1 pr-2 font-semibold text-stone-800 tabular-nums">
+                    {i + 1}
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={r.demand}
+                      onChange={(e) => setDemand(r.id, Number(e.target.value))}
+                      aria-label={`Demand for period ${i + 1}`}
+                      className={`${CELL_INPUT} tabular-nums`}
+                    />
+                  </td>
+                  <td className="py-1">
+                    <button
+                      onClick={() => deleteRow(r.id)}
+                      disabled={rows.length <= MIN_PERIODS}
+                      title={
+                        rows.length <= MIN_PERIODS
+                          ? `Keep at least ${MIN_PERIODS} periods`
+                          : `Delete period ${i + 1}`
+                      }
+                      aria-label={`Delete period ${i + 1}`}
+                      className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-stone-400"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            onClick={addRow}
+            disabled={rows.length >= MAX_PERIODS}
+            className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-40"
+          >
+            + Add row
+          </button>
+          <button
+            onClick={downloadCsv}
+            disabled={rows.length === 0}
+            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+          >
+            Download CSV
+          </button>
+        </div>
+        </>
+        )}
       </div>
 
       {/* The chart — the hero */}
@@ -545,63 +584,18 @@ export default function Ch8Forecasting() {
               </div>
               {showAnswers && (
                 <button
-                  onClick={() => toggleCalc(m.id)}
-                  aria-expanded={openCalc[m.id]}
+                  onClick={() => setCalcFor(m.id)}
+                  aria-haspopup="dialog"
                   disabled={!enabled[m.id]}
-                  className={
-                    openCalc[m.id] && enabled[m.id]
-                      ? 'rounded-lg bg-garnet-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-garnet-700'
-                      : 'rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40'
-                  }
+                  className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
                 >
-                  {openCalc[m.id] && enabled[m.id]
-                    ? 'Hide calculations'
-                    : 'Show calculations'}
+                  Show calculations
                 </button>
               )}
             </div>
           ))}
         </div>
         <ForecastChart demand={demand} series={chartSeries} />
-        {showAnswers &&
-          methods
-            .filter((m) => enabled[m.id] && openCalc[m.id])
-            .map((m) => (
-              <div key={m.id} className="mt-3 rounded-lg border border-stone-200 p-3">
-                <div className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-stone-800">
-                  <span
-                    className="inline-block h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: m.color }}
-                  />
-                  {m.label} — calculations
-                </div>
-                <table className="w-full max-w-2xl text-sm">
-                  <thead>
-                    <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                      <th className="w-24 py-1.5 pr-3 font-semibold">Period</th>
-                      <th className="py-1.5 font-semibold">Calculation</th>
-                    </tr>
-                  </thead>
-                  <tbody className="tabular-nums">
-                    {Array.from({ length: T + 1 }, (_, i) => i + 1)
-                      .filter((t) => m.forecasts[t - 1] !== null && m.forecasts[t - 1] !== undefined)
-                      .map((t) => (
-                        <tr key={t} className="border-b border-stone-100 last:border-0">
-                          <td className="py-1 pr-3 text-stone-700">
-                            {t}
-                            {t === T + 1 && (
-                              <span className="ml-1 text-xs text-stone-400">(next)</span>
-                            )}
-                          </td>
-                          <td className="py-1 text-stone-700">
-                            {calcText(m.id, t, demand, m.forecasts, maN, alpha)}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            ))}
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
           <button
             onClick={() => void downloadWorksheet(demand, { alpha })}
@@ -616,8 +610,8 @@ export default function Ch8Forecasting() {
             Create solutions (PDF)
           </button>
           <span className="text-xs text-stone-500">
-            Both use this exact problem — Naive, MA(3), and ES(α ={' '}
-            {alpha.toFixed(2)}) columns.
+            Both use this exact problem — Naive, MA(3), ES(α ={' '}
+            {alpha.toFixed(2)}), and regression columns.
           </span>
         </div>
       </div>
@@ -674,6 +668,92 @@ export default function Ch8Forecasting() {
           )}
         </div>
       )}
+
+      {/* Calculations pop-up */}
+      {showAnswers &&
+        calcFor !== null &&
+        (() => {
+          const m = methods.find((x) => x.id === calcFor)
+          if (!m) return null
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 p-4"
+              onClick={() => setCalcFor(null)}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={`${m.label} calculations`}
+                onClick={(e) => e.stopPropagation()}
+                className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl bg-white shadow-2xl"
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-3">
+                  <div className="flex items-center gap-1.5 text-sm font-semibold text-stone-800">
+                    <span
+                      className="inline-block h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: m.color }}
+                    />
+                    {m.label} — calculations
+                  </div>
+                  <button
+                    onClick={() => setCalcFor(null)}
+                    aria-label="Close"
+                    className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      aria-hidden
+                    >
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="overflow-y-auto px-4 py-3">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                        <th className="w-24 py-1.5 pr-3 font-semibold">Period</th>
+                        <th className="py-1.5 font-semibold">Calculation</th>
+                      </tr>
+                    </thead>
+                    <tbody className="tabular-nums">
+                      {Array.from({ length: T + 1 }, (_, i) => i + 1)
+                        .filter(
+                          (t) =>
+                            m.forecasts[t - 1] !== null &&
+                            m.forecasts[t - 1] !== undefined,
+                        )
+                        .map((t) => (
+                          <tr
+                            key={t}
+                            className="border-b border-stone-100 last:border-0"
+                          >
+                            <td className="py-1 pr-3 text-stone-700">
+                              {t}
+                              {t === T + 1 && (
+                                <span className="ml-1 text-xs text-stone-400">
+                                  (next)
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-1 text-stone-700">
+                              {calcText(m.id, t, demand, m.forecasts, maN, alpha)}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
     </div>
   )
 }

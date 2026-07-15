@@ -24,8 +24,8 @@ export const CLASS_DEMAND: number[] = [
 ]
 
 export const MIN_PERIODS = 4
-export const MAX_PERIODS = 24
-export const MIN_MA_N = 2
+export const MAX_PERIODS = 48
+export const MIN_MA_N = 1
 export const MAX_MA_N = 12
 export const MIN_ALPHA = 0
 export const MAX_ALPHA = 1
@@ -188,19 +188,22 @@ export interface GeneratorOptions {
   seasonal: boolean
   /** periods per seasonal cycle */
   seasonLength: number
+  /** noise amplitude as a percent of the base level (0 = perfectly smooth) */
+  variability: number
 }
 
 /**
  * A demand series from a chosen data-generating process: random base
  * level, the requested linear trend, an optional sinusoidal season with a
- * random phase, and mild noise — rounded to tens, never below 10.
+ * random phase, and noise at the chosen variability — rounded to tens,
+ * never below 10.
  */
 export function generateDemand(opts: GeneratorOptions): number[] {
   const level = 300 + Math.random() * 300
   const direction = opts.trend === 'up' ? 1 : opts.trend === 'down' ? -1 : 0
   const amplitude = opts.seasonal ? level * 0.35 : 0
   const phase = Math.random() * 2 * Math.PI
-  const noise = level * 0.12
+  const noise = level * (opts.variability / 100)
   const out: number[] = []
   for (let t = 0; t < opts.periods; t++) {
     const v =
