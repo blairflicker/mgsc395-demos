@@ -68,7 +68,7 @@ export const chapters: Chapter[] = [
     title: 'Capacity Planning',
     description:
       'Utilization, capacity cushions, and computing how many machines a process really needs.',
-    status: 'coming-soon',
+    status: 'available',
     exam: 2,
   },
   {
