@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
 import Launcher from './pages/Launcher'
 import ComingSoon from './pages/ComingSoon'
+import Ch3QualityControl from './pages/demos/ch3'
 import SuppBWaitingLines from './pages/demos/supp-b'
 import Ch6TheoryOfConstraints from './pages/demos/ch6'
 import Ch7ProjectManagement from './pages/demos/ch7'
@@ -35,6 +36,7 @@ export default function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Launcher />} />
+          <Route path="/ch3" element={<Ch3QualityControl />} />
           <Route path="/supp-b" element={<SuppBWaitingLines />} />
           <Route path="/ch6" element={<Ch6TheoryOfConstraints />} />
           <Route path="/ch7" element={<Ch7ProjectManagement />} />

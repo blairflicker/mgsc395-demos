@@ -48,8 +48,8 @@ export const chapters: Chapter[] = [
     label: 'Chapter 3',
     title: 'Quality & Control Charts',
     description:
-      'Sample bottles off the shelf, build X̄ and R control charts, and assess process capability.',
-    status: 'coming-soon',
+      'Sample bottles off the shelf, build X̄ and R control charts, and judge whether the process is in control.',
+    status: 'available',
     exam: 1,
   },
   {
