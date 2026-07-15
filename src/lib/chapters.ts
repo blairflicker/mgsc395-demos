@@ -39,8 +39,8 @@ export const chapters: Chapter[] = [
     label: 'Chapter 2',
     title: 'Process Strategy & Analysis',
     description:
-      'The manufacturing matrix, Pareto charts, and cause-and-effect thinking for process improvement.',
-    status: 'coming-soon',
+      'Pareto charts — sort the complaints, add the cumulative line, and find the vital few worth fixing.',
+    status: 'available',
     exam: 1,
   },
   {
@@ -58,7 +58,7 @@ export const chapters: Chapter[] = [
     title: 'Lean Systems',
     description:
       'Value stream mapping metrics — takt time, per-unit processing time, and finding the bottleneck.',
-    status: 'coming-soon',
+    status: 'available',
     exam: 1,
   },
   // ── Exam 2 ──────────────────────────────────────────────

@@ -5,7 +5,9 @@ import Launcher from './pages/Launcher'
 import ComingSoon from './pages/ComingSoon'
 import Ch1Productivity from './pages/demos/ch1'
 import SuppABreakEven from './pages/demos/supp-a'
+import Ch2ProcessAnalysis from './pages/demos/ch2'
 import Ch3QualityControl from './pages/demos/ch3'
+import Ch4LeanSystems from './pages/demos/ch4'
 import Ch5CapacityPlanning from './pages/demos/ch5'
 import SuppBWaitingLines from './pages/demos/supp-b'
 import Ch6TheoryOfConstraints from './pages/demos/ch6'
@@ -41,7 +43,9 @@ export default function App() {
           <Route path="/" element={<Launcher />} />
           <Route path="/ch1" element={<Ch1Productivity />} />
           <Route path="/supp-a" element={<SuppABreakEven />} />
+          <Route path="/ch2" element={<Ch2ProcessAnalysis />} />
           <Route path="/ch3" element={<Ch3QualityControl />} />
+          <Route path="/ch4" element={<Ch4LeanSystems />} />
           <Route path="/ch5" element={<Ch5CapacityPlanning />} />
           <Route path="/supp-b" element={<SuppBWaitingLines />} />
           <Route path="/ch6" element={<Ch6TheoryOfConstraints />} />
