@@ -101,7 +101,9 @@ export default function Ch3QualityControl() {
   const [line, setLine] = useState<LineBottle[]>(() => freshLine(CLASS_DGP, 11))
   const [tray, setTray] = useState<number[]>([])
   const [showAnswers, setShowAnswers] = useState(true)
-  const [selBox, setSelBox] = useState<number | null>(null)
+  /** the box whose contents are popped open, and where the popover sits */
+  const [popover, setPopover] = useState<{ index: number; left: number; width: number } | null>(null)
+  const boxRowRef = useRef<HTMLDivElement>(null)
   const idRef = useRef(1)
 
   useEffect(() => {
@@ -142,7 +144,7 @@ export default function Ch3QualityControl() {
     if (!complete) return
     setSubgroups((list) => [...list, makeSubgroup(`b${idRef.current++}`, tray)])
     setTray([])
-    setSelBox(null)
+    setPopover(null)
   }
 
   const autoSample = (count: number) => {
@@ -154,7 +156,7 @@ export default function Ch3QualityControl() {
       return next
     })
     setTray([])
-    setSelBox(null)
+    setPopover(null)
   }
 
   const changeDgp = (patch: Partial<Dgp>) => {
@@ -170,7 +172,7 @@ export default function Ch3QualityControl() {
     setSubgroups([])
     setLine(freshLine(next, 1))
     setTray([])
-    setSelBox(null)
+    setPopover(null)
   }
 
   const clearSamples = () => {
@@ -179,7 +181,7 @@ export default function Ch3QualityControl() {
     setSubgroups([])
     setLine(freshLine(next, 1))
     setTray([])
-    setSelBox(null)
+    setPopover(null)
   }
 
   // ── practice toolbar ────────────────────────────────────
@@ -198,7 +200,7 @@ export default function Ch3QualityControl() {
     setSubgroups(classSubgroups())
     setLine(freshLine(CLASS_DGP, 11))
     setTray([])
-    setSelBox(null)
+    setPopover(null)
     setShowAnswers(true)
   }
 
@@ -208,15 +210,38 @@ export default function Ch3QualityControl() {
     setSubgroups([])
     setLine(freshLine(d, 1))
     setTray([])
-    setSelBox(null)
+    setPopover(null)
     setShowAnswers(false)
   }
 
-  // the box whose contents are spelled out under the row: the clicked box,
-  // or the latest one when nothing is locked in
-  const locked = selBox !== null && selBox < subgroups.length ? selBox : null
-  const detailIndex = locked ?? (subgroups.length > 0 ? subgroups.length - 1 : null)
-  const detail = detailIndex !== null ? subgroups[detailIndex] : null
+  useEffect(() => {
+    if (popover === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPopover(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [popover])
+
+  const clickBox = (i: number, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (popover?.index === i) {
+      setPopover(null)
+      return
+    }
+    const wrap = boxRowRef.current
+    if (!wrap) return
+    const w = wrap.getBoundingClientRect()
+    const b = e.currentTarget.getBoundingClientRect()
+    const width = Math.min(560, w.width)
+    const center = b.left - w.left + b.width / 2
+    const left = Math.max(0, Math.min(center - width / 2, w.width - width))
+    setPopover({ index: i, left, width })
+  }
+
+  const popped =
+    popover !== null && popover.index < subgroups.length
+      ? subgroups[popover.index]
+      : null
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -474,54 +499,75 @@ export default function Ch3QualityControl() {
           </p>
         ) : (
           <>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {subgroups.map((g, i) => (
-                <button
-                  key={g.id}
-                  onClick={() => setSelBox((s) => (s === i ? null : i))}
-                  aria-pressed={locked === i}
-                  aria-label={`Inspect box ${i + 1}`}
-                  className={
-                    locked === i
-                      ? 'min-w-24 shrink-0 rounded-lg border border-garnet-400 bg-garnet-50/60 px-2.5 py-2 text-center ring-2 ring-garnet-200'
-                      : detailIndex === i
-                        ? 'min-w-24 shrink-0 rounded-lg border border-garnet-300 bg-garnet-50/30 px-2.5 py-2 text-center hover:border-garnet-400'
+            <div ref={boxRowRef} className="relative">
+              <div
+                className="flex gap-2 overflow-x-auto pb-1"
+                onScroll={() => setPopover(null)}
+              >
+                {subgroups.map((g, i) => (
+                  <button
+                    key={g.id}
+                    onClick={(e) => clickBox(i, e)}
+                    aria-pressed={popover?.index === i}
+                    aria-label={`Open box ${i + 1}`}
+                    className={
+                      popover?.index === i
+                        ? 'min-w-24 shrink-0 rounded-lg border border-garnet-400 bg-garnet-50/60 px-2.5 py-2 text-center ring-2 ring-garnet-200'
                         : 'min-w-24 shrink-0 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-2 text-center hover:border-garnet-300'
-                  }
+                    }
+                  >
+                    <div className="text-xs font-semibold text-stone-500">#{i + 1}</div>
+                    <div className="text-sm text-stone-800 tabular-nums">
+                      X̄ {g.mean.toFixed(2)}
+                    </div>
+                    <div className="text-sm text-stone-800 tabular-nums">
+                      R {g.range.toFixed(2)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {popover !== null && popped !== null && (
+                <div
+                  role="dialog"
+                  aria-label={`Inside box ${popover.index + 1}`}
+                  className="absolute z-20 space-y-1 rounded-xl border border-stone-300 bg-white p-4 text-sm text-stone-700 shadow-lg tabular-nums"
+                  style={{ top: 'calc(100% + 4px)', left: popover.left, width: popover.width }}
                 >
-                  <div className="text-xs font-semibold text-stone-500">#{i + 1}</div>
-                  <div className="text-sm text-stone-800 tabular-nums">
-                    X̄ {g.mean.toFixed(2)}
-                  </div>
-                  <div className="text-sm text-stone-800 tabular-nums">
-                    R {g.range.toFixed(2)}
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 min-h-28 space-y-1 border-t border-stone-100 pt-3 text-sm text-stone-700 tabular-nums">
-              {detail && (
-                <>
-                  <div>
+                  <div className="flex items-center justify-between gap-3">
                     <span className="font-semibold text-stone-900">
-                      Box #{(detailIndex ?? 0) + 1}
-                    </span>{' '}
-                    <span className="text-stone-400">
-                      {locked !== null ? '(selected — click it again to release)' : '(latest)'}
+                      Box #{popover.index + 1}
                     </span>
+                    <button
+                      onClick={() => setPopover(null)}
+                      aria-label="Close"
+                      className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        aria-hidden
+                      >
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                      </svg>
+                    </button>
                   </div>
                   <div className="break-words">
-                    Observations: {detail.values.map((v) => v.toFixed(2)).join(', ')}
+                    Observations: {popped.values.map((v) => v.toFixed(2)).join(', ')}
                   </div>
                   <div className="break-words">
-                    X̄ = ({detail.values.map((v) => v.toFixed(2)).join(' + ')}) /{' '}
-                    {detail.values.length} = {detail.mean.toFixed(2)}
+                    X̄ = ({popped.values.map((v) => v.toFixed(2)).join(' + ')}) /{' '}
+                    {popped.values.length} = {popped.mean.toFixed(2)}
                   </div>
                   <div>
-                    R = {Math.max(...detail.values).toFixed(2)} −{' '}
-                    {Math.min(...detail.values).toFixed(2)} = {detail.range.toFixed(2)}
+                    R = {Math.max(...popped.values).toFixed(2)} −{' '}
+                    {Math.min(...popped.values).toFixed(2)} = {popped.range.toFixed(2)}
                   </div>
-                </>
+                </div>
               )}
             </div>
           </>
