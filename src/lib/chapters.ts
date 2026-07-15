@@ -22,7 +22,7 @@ export const chapters: Chapter[] = [
     title: 'Productivity',
     description:
       'Single-factor, multifactor, and value-based productivity — compute and compare them across scenarios.',
-    status: 'coming-soon',
+    status: 'available',
     exam: 1,
   },
   {
@@ -31,7 +31,7 @@ export const chapters: Chapter[] = [
     title: 'Break-Even Analysis',
     description:
       'Find the break-even point of a process and compare two competing processes (make vs. buy).',
-    status: 'coming-soon',
+    status: 'available',
     exam: 1,
   },
   {

@@ -138,7 +138,7 @@ export default function Ch1Productivity() {
               ['Value', 'per unit', `${money(single.unitValue)}/sq yd`],
             ] as const
           ).map(([top, bottom, value]) => (
-            <span key={bottom}>
+            <span key={`${top} ${bottom}`}>
               <span className="flex h-8 flex-col justify-end text-xs leading-4 font-semibold text-stone-500 uppercase">
                 {top !== '' && <span>{top}</span>}
                 <span>{bottom}</span>
@@ -164,7 +164,7 @@ export default function Ch1Productivity() {
               ['Selling', 'price', `${money(multi.price)}/unit`],
             ] as const
           ).map(([top, bottom, value]) => (
-            <span key={bottom}>
+            <span key={`${top} ${bottom}`}>
               <span className="flex h-8 flex-col justify-end text-xs leading-4 font-semibold text-stone-500 uppercase">
                 {top !== '' && <span>{top}</span>}
                 <span>{bottom}</span>
