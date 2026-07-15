@@ -20,85 +20,44 @@ import { ControlCharts } from './Charts'
 const classSubgroups = (): Subgroup[] =>
   CLASS_SAMPLES.map((values, i) => makeSubgroup(`c${i + 1}`, values))
 
-/** validated palette: bottle water in teal */
-const WATER = '#0d9488'
+/** seconds for a bottle to cross the belt (1,400 px of travel) */
+const BELT_DUR = 45
+/** seconds between bottles appearing on the right */
+const SPAWN_S = 1.8
+/** bottles pre-placed along the belt on a fresh line */
+const INITIAL_BOTTLES = 24
 
-function Bottle({
-  value,
-  picked,
-  revealed,
-  disabled,
-  onClick,
-  label,
-}: {
+interface LineBottle {
+  id: number
   value: number
-  picked: boolean
-  revealed: boolean
-  disabled: boolean
-  onClick: () => void
-  label: string
-}) {
-  const frac = Math.min(0.97, Math.max(0.06, (value - 11.3) / 1.4))
-  const bodyTop = 20
-  const bodyH = 38
-  const fillH = frac * bodyH
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      aria-pressed={picked}
-      aria-label={label}
-      className={
-        picked
-          ? 'rounded-lg border border-garnet-400 bg-garnet-50/40 p-1 ring-2 ring-garnet-200'
-          : 'rounded-lg border border-stone-200 bg-white p-1 hover:border-stone-400 disabled:hover:border-stone-200'
-      }
-    >
-      <svg viewBox="0 0 44 64" className="mx-auto h-14 w-10" aria-hidden>
-        <rect x="17" y="2" width="10" height="5" rx="1.5" fill="#57534e" />
-        <path
-          d="M18,7 L26,7 L26,12 L31,18 L31,58 Q31,61 28,61 L16,61 Q13,61 13,58 L13,18 L18,12 Z"
-          fill="#fafaf9"
-          stroke="#a8a29e"
-          strokeWidth="1.4"
-        />
-        {revealed ? (
-          <rect
-            x="14.5"
-            y={bodyTop + (bodyH - fillH)}
-            width="15"
-            height={fillH}
-            fill={WATER}
-            fillOpacity="0.55"
-          />
-        ) : (
-          <text
-            x="22"
-            y="45"
-            textAnchor="middle"
-            fontSize="15"
-            fontWeight="600"
-            fill="#a8a29e"
-          >
-            ?
-          </text>
-        )}
-      </svg>
-      <span className="block h-4 text-center text-[11px] text-stone-600 tabular-nums">
-        {revealed ? value.toFixed(2) : ''}
-      </span>
-    </button>
-  )
+  /** negative delays pre-place a bottle partway down the belt */
+  delay: number
 }
 
-/** k distinct random indices from 0..size−1 */
-function randomIndices(k: number, size: number): number[] {
-  const all = Array.from({ length: size }, (_, i) => i)
-  for (let i = all.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[all[i], all[j]] = [all[j], all[i]]
-  }
-  return all.slice(0, k)
+let bottleSeq = 1
+
+const freshLine = (dgp: Dgp, t: number): LineBottle[] =>
+  makeShelf(dgp, t, INITIAL_BOTTLES).map((value, i) => ({
+    id: bottleSeq++,
+    value,
+    delay: -(i * SPAWN_S),
+  }))
+
+function BottleGlyph() {
+  return (
+    <svg viewBox="0 0 44 64" className="h-14 w-10" aria-hidden>
+      <rect x="17" y="2" width="10" height="5" rx="1.5" fill="#57534e" />
+      <path
+        d="M18,7 L26,7 L26,12 L31,18 L31,58 Q31,61 28,61 L16,61 Q13,61 13,58 L13,18 L18,12 Z"
+        fill="#fafaf9"
+        stroke="#a8a29e"
+        strokeWidth="1.4"
+      />
+      <text x="22" y="45" textAnchor="middle" fontSize="15" fontWeight="600" fill="#a8a29e">
+        ?
+      </text>
+    </svg>
+  )
 }
 
 const VERDICT_STYLE: Record<VerdictStatus, { label: string; cls: string }> = {
@@ -112,9 +71,10 @@ export default function Ch3QualityControl() {
   const [n, setN] = useState(5)
   const [dgp, setDgp] = useState<Dgp>({ ...CLASS_DGP })
   const [subgroups, setSubgroups] = useState<Subgroup[]>(classSubgroups)
-  const [shelf, setShelf] = useState<number[]>(() => makeShelf(CLASS_DGP, 11))
-  const [picked, setPicked] = useState<number[]>([])
+  const [line, setLine] = useState<LineBottle[]>(() => freshLine(CLASS_DGP, 11))
+  const [tray, setTray] = useState<number[]>([])
   const [showAnswers, setShowAnswers] = useState(true)
+  const [hoverBox, setHoverBox] = useState<number | null>(null)
   const idRef = useRef(1)
 
   useEffect(() => {
@@ -125,44 +85,53 @@ export default function Ch3QualityControl() {
   }, [])
 
   const t = subgroups.length + 1
-  const complete = picked.length === n
+  const complete = tray.length === n
   const lim = limits(subgroups, n)
   const verd = verdict(subgroups, lim)
   const f = FACTORS[n]
 
-  const toggleBottle = (i: number) => {
+  // new bottles keep appearing on the right of the belt
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const value = makeShelf(dgp, t, 1)[0]
+      setLine((l) => [...l.slice(-40), { id: bottleSeq++, value, delay: 0 }])
+    }, SPAWN_S * 1000)
+    return () => clearInterval(iv)
+  }, [dgp, t])
+
+  const bottleGone = (id: number) => {
+    setLine((l) => l.filter((b) => b.id !== id))
+  }
+
+  const pick = (id: number) => {
     if (complete) return
-    setPicked((p) =>
-      p.includes(i) ? p.filter((x) => x !== i) : p.length < n ? [...p, i] : p,
-    )
+    const bottle = line.find((b) => b.id === id)
+    if (!bottle) return
+    setLine((l) => l.filter((b) => b.id !== id))
+    setTray((s) => (s.length < n ? [...s, bottle.value] : s))
   }
 
   const seal = () => {
     if (!complete) return
-    const values = picked.map((i) => shelf[i])
-    setSubgroups((list) => [...list, makeSubgroup(`b${idRef.current++}`, values)])
-    setShelf(makeShelf(dgp, t + 1))
-    setPicked([])
+    setSubgroups((list) => [...list, makeSubgroup(`b${idRef.current++}`, tray)])
+    setTray([])
+    setHoverBox(null)
   }
 
   const autoSample = (count: number) => {
-    const next = [...subgroups]
-    let sh = shelf
-    for (let k = 0; k < count; k++) {
-      const values = randomIndices(n, sh.length).map((i) => sh[i])
-      next.push(makeSubgroup(`b${idRef.current++}`, values))
-      sh = makeShelf(dgp, next.length + 1)
-    }
-    setSubgroups(next)
-    setShelf(sh)
-    setPicked([])
+    setSubgroups((list) => {
+      const next = [...list]
+      for (let k = 0; k < count; k++) {
+        next.push(makeSubgroup(`b${idRef.current++}`, makeShelf(dgp, next.length + 1, n)))
+      }
+      return next
+    })
+    setTray([])
+    setHoverBox(null)
   }
 
   const changeDgp = (patch: Partial<Dgp>) => {
-    const next = { ...dgp, ...patch, t0: t }
-    setDgp(next)
-    setShelf(makeShelf(next, t))
-    setPicked([])
+    setDgp({ ...dgp, ...patch, t0: t })
   }
 
   const changeN = (value: number) => {
@@ -172,16 +141,18 @@ export default function Ch3QualityControl() {
     setN(v)
     setDgp(next)
     setSubgroups([])
-    setShelf(makeShelf(next, 1))
-    setPicked([])
+    setLine(freshLine(next, 1))
+    setTray([])
+    setHoverBox(null)
   }
 
   const clearSamples = () => {
     const next = { ...dgp, t0: 1 }
     setDgp(next)
     setSubgroups([])
-    setShelf(makeShelf(next, 1))
-    setPicked([])
+    setLine(freshLine(next, 1))
+    setTray([])
+    setHoverBox(null)
   }
 
   // ── practice toolbar ────────────────────────────────────
@@ -198,8 +169,9 @@ export default function Ch3QualityControl() {
     setN(5)
     setDgp({ ...CLASS_DGP })
     setSubgroups(classSubgroups())
-    setShelf(makeShelf(CLASS_DGP, 11))
-    setPicked([])
+    setLine(freshLine(CLASS_DGP, 11))
+    setTray([])
+    setHoverBox(null)
     setShowAnswers(true)
   }
 
@@ -207,16 +179,21 @@ export default function Ch3QualityControl() {
     const d = randomDgp()
     setDgp(d)
     setSubgroups([])
-    setShelf(makeShelf(d, 1))
-    setPicked([])
+    setLine(freshLine(d, 1))
+    setTray([])
+    setHoverBox(null)
     setShowAnswers(false)
   }
+
+  // the box whose contents are spelled out under the row
+  const detailIndex = hoverBox ?? (subgroups.length > 0 ? subgroups.length - 1 : null)
+  const detail = detailIndex !== null ? subgroups[detailIndex] : null
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <DemoHeader label="Chapter 3 · Quality" title="The Sampling Lab">
-        Box samples off the shelf, build the X̄ and R charts, and decide
-        whether the process is in control.
+        Pick bottles off the line, box the samples, and decide from the X̄
+        and R charts whether the process is in control.
       </DemoHeader>
 
       {/* Practice toolbar */}
@@ -362,17 +339,17 @@ export default function Ch3QualityControl() {
         </div>
       )}
 
-      {/* The shelf */}
+      {/* The assembly line */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
           <div>
             <h2 className="text-lg font-semibold text-stone-900">
-              The shelf — sample {t}
+              The assembly line — sample {t}
             </h2>
             <p className="text-sm text-stone-600">
               {complete
-                ? 'Sample complete — the fills you measured are revealed.'
-                : `Click ${n} bottles; fills stay hidden until the sample is complete.`}
+                ? 'Sample complete — seal the box to measure it.'
+                : `Pick ${n} bottles off the line as they go by.`}
             </p>
           </div>
           <label className="flex items-center gap-2 text-sm text-stone-600">
@@ -388,26 +365,63 @@ export default function Ch3QualityControl() {
             />
           </label>
         </div>
-        <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
-          {shelf.map((v, i) => (
-            <Bottle
-              key={`${t}-${i}`}
-              value={v}
-              picked={picked.includes(i)}
-              revealed={complete && picked.includes(i)}
-              disabled={complete && !picked.includes(i)}
-              onClick={() => toggleBottle(i)}
-              label={`Bottle ${i + 1}${picked.includes(i) ? ' (in your sample)' : ''}`}
-            />
+        <div className="relative h-24 overflow-hidden">
+          <div className="absolute inset-x-0 bottom-0 h-2 rounded bg-stone-200" />
+          {line.map((b) => (
+            <button
+              key={b.id}
+              onClick={() => pick(b.id)}
+              onAnimationEnd={() => bottleGone(b.id)}
+              disabled={complete}
+              aria-label="Take this bottle off the line"
+              className="ch3-belt-move absolute top-3 rounded transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-garnet-400 disabled:cursor-default"
+              style={{
+                right: -48,
+                animationDuration: `${BELT_DUR}s`,
+                animationDelay: `${b.delay}s`,
+              }}
+            >
+              <BottleGlyph />
+            </button>
           ))}
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-stone-100 pt-3">
+          <span className="text-xs font-semibold text-stone-500 uppercase">
+            Current sample
+          </span>
+          <span className="flex items-center gap-1">
+            {Array.from({ length: n }, (_, i) => (
+              <span
+                key={i}
+                className={
+                  i < tray.length
+                    ? 'flex h-12 w-8 items-center justify-center'
+                    : 'flex h-12 w-8 items-center justify-center rounded-lg border border-dashed border-stone-300'
+                }
+              >
+                {i < tray.length && (
+                  <svg viewBox="0 0 44 64" className="h-11 w-7" aria-hidden>
+                    <rect x="17" y="2" width="10" height="5" rx="1.5" fill="#57534e" />
+                    <path
+                      d="M18,7 L26,7 L26,12 L31,18 L31,58 Q31,61 28,61 L16,61 Q13,61 13,58 L13,18 L18,12 Z"
+                      fill="#fafaf9"
+                      stroke="#a8a29e"
+                      strokeWidth="1.4"
+                    />
+                    <text x="22" y="45" textAnchor="middle" fontSize="15" fontWeight="600" fill="#a8a29e">
+                      ?
+                    </text>
+                  </svg>
+                )}
+              </span>
+            ))}
+          </span>
           <button
             onClick={seal}
             disabled={!complete}
             className="rounded-lg bg-garnet-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-garnet-700 disabled:opacity-40"
           >
-            {complete ? 'Seal the box' : `Seal the box (${picked.length}/${n})`}
+            {complete ? 'Seal the box' : `Seal the box (${tray.length}/${n})`}
           </button>
           <button
             onClick={() => autoSample(1)}
@@ -432,22 +446,46 @@ export default function Ch3QualityControl() {
             No boxes yet — seal your first sample above.
           </p>
         ) : (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {subgroups.map((g, i) => (
-              <div
-                key={g.id}
-                className="min-w-24 shrink-0 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-2 text-center"
-              >
-                <div className="text-xs font-semibold text-stone-500">#{i + 1}</div>
-                <div className="text-sm text-stone-800 tabular-nums">
-                  X̄ {g.mean.toFixed(2)}
+          <>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {subgroups.map((g, i) => (
+                <div
+                  key={g.id}
+                  onMouseEnter={() => setHoverBox(i)}
+                  onMouseLeave={() => setHoverBox(null)}
+                  className={
+                    detailIndex === i
+                      ? 'min-w-24 shrink-0 rounded-lg border border-garnet-300 bg-garnet-50/40 px-2.5 py-2 text-center'
+                      : 'min-w-24 shrink-0 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-2 text-center'
+                  }
+                >
+                  <div className="text-xs font-semibold text-stone-500">#{i + 1}</div>
+                  <div className="text-sm text-stone-800 tabular-nums">
+                    X̄ {g.mean.toFixed(2)}
+                  </div>
+                  <div className="text-sm text-stone-800 tabular-nums">
+                    R {g.range.toFixed(2)}
+                  </div>
                 </div>
-                <div className="text-sm text-stone-800 tabular-nums">
-                  R {g.range.toFixed(2)}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+            <div className="mt-3 min-h-10 border-t border-stone-100 pt-2 text-xs text-stone-600 tabular-nums">
+              {detail && (
+                <>
+                  <div>
+                    Box #{(detailIndex ?? 0) + 1} —{' '}
+                    {detail.values.map((v) => v.toFixed(2)).join(', ')}
+                  </div>
+                  <div>
+                    X̄ = ({detail.values.map((v) => v.toFixed(2)).join(' + ')}) /{' '}
+                    {detail.values.length} = {detail.mean.toFixed(2)} · R ={' '}
+                    {Math.max(...detail.values).toFixed(2)} −{' '}
+                    {Math.min(...detail.values).toFixed(2)} = {detail.range.toFixed(2)}
+                  </div>
+                </>
+              )}
+            </div>
+          </>
         )}
       </div>
 

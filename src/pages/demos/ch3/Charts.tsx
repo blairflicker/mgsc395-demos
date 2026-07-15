@@ -79,7 +79,12 @@ const Chart = memo(function Chart({
     </text>
   )
 
-  const xLabelEvery = pts.length > 24 ? 4 : pts.length > 12 ? 2 : 1
+  // ~5-10 labeled ticks no matter how many samples there are
+  const tickStep =
+    [1, 2, 5, 10, 20, 25, 50, 100, 200, 500].find((s) => pts.length / s <= 10) ?? 1000
+  const ticked = pts.filter((p) => p.t === 1 || p.t % tickStep === 0)
+  const dotR = pts.length > 60 ? 2.1 : 3.2
+  const badR = pts.length > 60 ? 3.2 : 4.2
 
   return (
     <div>
@@ -108,7 +113,7 @@ const Chart = memo(function Chart({
             stroke={INK_MUTED}
             strokeWidth="1"
           />
-          {pts.map((p) => (
+          {ticked.map((p) => (
             <g key={p.t}>
               <line
                 x1={xPos(p.t)}
@@ -118,18 +123,16 @@ const Chart = memo(function Chart({
                 stroke={INK_MUTED}
                 strokeWidth="1"
               />
-              {(p.t % xLabelEvery === 0 || p.t === 1) && (
-                <text
-                  x={xPos(p.t)}
-                  y={M.top + PLOT_H + 15}
-                  textAnchor="middle"
-                  fontSize="9.5"
-                  fill={INK_MUTED}
-                  className="tabular-nums"
-                >
-                  {p.t}
-                </text>
-              )}
+              <text
+                x={xPos(p.t)}
+                y={M.top + PLOT_H + 15}
+                textAnchor="middle"
+                fontSize="9.5"
+                fill={INK_MUTED}
+                className="tabular-nums"
+              >
+                {p.t}
+              </text>
             </g>
           ))}
           <text
@@ -176,7 +179,7 @@ const Chart = memo(function Chart({
                 <circle
                   cx={xPos(p.t)}
                   cy={yPos(p.v)}
-                  r={bad ? 4.2 : 3.2}
+                  r={bad ? badR : dotR}
                   fill={bad ? COLOR_LIMIT : COLOR_SERIES}
                 />
                 <circle cx={xPos(p.t)} cy={yPos(p.v)} r="9" fill="transparent" />

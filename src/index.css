@@ -47,3 +47,23 @@ body {
   stroke: #292524;
   stroke-width: 3;
 }
+
+/* bottles drifting left along the Chapter 3 assembly line */
+@keyframes ch3-belt {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-1400px);
+  }
+}
+
+.ch3-belt-move {
+  animation: ch3-belt linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ch3-belt-move {
+    animation-duration: 240s !important;
+  }
+}

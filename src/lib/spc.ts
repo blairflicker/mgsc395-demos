@@ -248,6 +248,6 @@ export function verdict(subgroups: Subgroup[], lim: Limits | null): Verdict {
   }
   return {
     status: 'out',
-    detail: `${v.length} points fall outside the limits — first, ${what(v[0])}.`,
+    detail: `${v.length} points fall outside the limits.`,
   }
 }
