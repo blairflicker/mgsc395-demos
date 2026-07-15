@@ -33,8 +33,10 @@ export interface CapacityCase {
   products: ProductLoad[]
   /** operating days per year */
   days: number
-  /** shift hours per day */
-  hoursPerDay: number
+  /** hours per shift */
+  shiftHours: number
+  /** shifts per day (shifts × shiftHours never exceeds 24) */
+  shifts: number
   /** target capacity cushion, percent */
   cushion: number
 }
@@ -46,7 +48,8 @@ export const CLASS_CASE: CapacityCase = {
     { id: 'y', name: 'Client Y', D: 6000, p: 0.7, Q: 30, s: 0.4 },
   ],
   days: 250,
-  hoursPerDay: 8,
+  shiftHours: 8,
+  shifts: 1,
   cushion: 15,
 }
 
@@ -66,7 +69,7 @@ export const totalHours = (c: CapacityCase): number =>
 
 /** N — hours each machine supplies per year */
 export const hoursPerMachine = (c: CapacityCase): number =>
-  c.days * c.hoursPerDay
+  c.days * c.shiftHours * c.shifts
 
 /** hours per machine set aside for the cushion */
 export const reservedHours = (c: CapacityCase): number =>
@@ -97,14 +100,19 @@ const NAMES = ['Client A', 'Client B', 'Client C'] as const
 /**
  * A random practice problem: half the time a single product with no
  * setups (the simple formula), otherwise 2–3 products with lot sizes and
- * setup times (the complicated formula). Demands are multiples of the lot
- * size so lot counts come out whole. Regenerates until M lands between
- * 1.1 and 8.5 machines and isn't already almost an integer.
+ * setup times (the complicated formula). Calendars vary — 250/260/300/
+ * 350/365 days, 7/8/10-hour shifts, 1–3 shifts per day (never more than
+ * 24 h/day). Demands are multiples of the lot size so lot counts come out
+ * whole. Regenerates until M lands between 1.1 and 8.5 machines and isn't
+ * already almost an integer.
  */
 export function randomCase(): CapacityCase {
   for (let attempt = 0; attempt < 2000; attempt++) {
     const cushion = 5 * (1 + Math.floor(Math.random() * 8))
-    const hoursPerDay = Math.random() < 0.25 ? 16 : 8
+    const days = [250, 260, 300, 350, 365][Math.floor(Math.random() * 5)]
+    const shiftHours = [7, 8, 10][Math.floor(Math.random() * 3)]
+    const maxShifts = Math.floor(24 / shiftHours)
+    const shifts = 1 + Math.floor(Math.random() * Math.min(3, maxShifts))
     const single = Math.random() < 0.5
     const products: ProductLoad[] = single
       ? [
@@ -128,7 +136,7 @@ export function randomCase(): CapacityCase {
             s: 0.05 * (2 + Math.floor(Math.random() * 17)),
           }
         })
-    const c: CapacityCase = { products, days: 250, hoursPerDay, cushion }
+    const c: CapacityCase = { products, days, shiftHours, shifts, cushion }
     const m = machinesRequired(c)
     const frac = m - Math.floor(m)
     if (m >= 1.1 && m <= 8.5 && frac > 0.08 && frac < 0.92) return c
@@ -137,7 +145,8 @@ export function randomCase(): CapacityCase {
   return {
     products: [{ id: 'r1', name: NAMES[0], D: 4000, p: 0.5, Q: null, s: null }],
     days: 250,
-    hoursPerDay: 8,
+    shiftHours: 8,
+    shifts: 1,
     cushion: 20,
   }
 }

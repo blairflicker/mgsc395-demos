@@ -54,6 +54,8 @@ export default function Ch5CapacityPlanning() {
   const util = utilizationAt(cap, machines)
   const eff = 100 - util
   const anySetups = cap.products.some((pl) => pl.s !== null)
+  /** both cards share this scale, so an hour is the same width everywhere */
+  const scaleMax = Math.max(total, N)
 
   const setMachineCount = (value: number) => {
     if (!Number.isFinite(value)) return
@@ -205,7 +207,7 @@ export default function Ch5CapacityPlanning() {
             {(
               [
                 ['Operating days', `${cap.days}/yr`],
-                ['Shift', `${cap.hoursPerDay} h/day`],
+                ['Shifts', `${cap.shifts} × ${cap.shiftHours} h/day`],
                 ['Hours per machine (N)', `${fmtH(N)} h/yr`],
                 ['Target cushion (C)', `${cap.cushion}%`],
               ] as const
@@ -250,45 +252,13 @@ export default function Ch5CapacityPlanning() {
             )}
           </div>
         </div>
-        <div className="space-y-2.5">
-          {cap.products.map((pl, i) => {
-            const color = PRODUCT_COLORS[i % PRODUCT_COLORS.length]
-            const proc = processingHours(pl)
-            const setup = setupHours(pl)
-            return (
-              <div
-                key={pl.id}
-                className="grid grid-cols-[5.5rem_1fr_13rem] items-center gap-3"
-              >
-                <span className="text-sm font-medium text-stone-800">
-                  {pl.name}
-                </span>
-                <div className="flex h-4 overflow-hidden rounded bg-stone-100">
-                  <div
-                    title={`${pl.name} — processing: ${fmtH(proc)} h`}
-                    style={{
-                      width: `${(proc / total) * 100}%`,
-                      backgroundColor: color,
-                    }}
-                  />
-                  {pl.s !== null && (
-                    <div
-                      title={`${pl.name} — setup: ${fmtH(setup)} h`}
-                      style={{ width: `${(setup / total) * 100}%`, ...setupStyle(color) }}
-                    />
-                  )}
-                </div>
-                <span className="text-right text-xs text-stone-500 tabular-nums">
-                  {pl.s !== null
-                    ? `${fmtH(proc)} + ${fmtH(setup)} setup = ${fmtH(productHours(pl))} h`
-                    : `${fmtH(proc)} h`}
-                </span>
-              </div>
-            )
-          })}
-          <div className="grid grid-cols-[5.5rem_1fr_13rem] items-center gap-3 border-t border-stone-100 pt-2.5">
-            <span className="text-sm font-semibold text-stone-900">Total</span>
-            <div className="flex h-4 overflow-hidden rounded bg-stone-100">
+        <div className="grid grid-cols-[5.5rem_1fr_13rem] items-center gap-3">
+          <span className="text-sm font-semibold text-stone-900">Total</span>
+          <div>
+            <div
+              className="flex h-5 overflow-hidden rounded"
+              style={{ width: `${(total / scaleMax) * 100}%` }}
+            >
               {segments.map((seg) => (
                 <div
                   key={seg.key}
@@ -297,10 +267,10 @@ export default function Ch5CapacityPlanning() {
                 />
               ))}
             </div>
-            <span className="text-right text-xs font-semibold text-stone-700 tabular-nums">
-              {fmtH(total)} h needed
-            </span>
           </div>
+          <span className="text-right text-xs font-semibold text-stone-700 tabular-nums">
+            {fmtH(total)} h needed
+          </span>
         </div>
       </div>
 
@@ -340,6 +310,26 @@ export default function Ch5CapacityPlanning() {
           </span>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+          {cap.products.map((pl, i) => (
+            <span key={pl.id} className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{
+                  backgroundColor: PRODUCT_COLORS[i % PRODUCT_COLORS.length],
+                }}
+              />
+              {pl.name}
+            </span>
+          ))}
+          {anySetups && (
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2.5 w-4 rounded-sm"
+                style={setupStyle('#78716c')}
+              />
+              setup time
+            </span>
+          )}
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-garnet-300 bg-garnet-100/70" />
             cushion set aside ({cap.cushion}%)
@@ -353,32 +343,37 @@ export default function Ch5CapacityPlanning() {
           {Array.from({ length: machines }, (_, m) => (
             <div
               key={m}
-              className="grid grid-cols-[5.5rem_1fr_9rem] items-center gap-3"
+              className="grid grid-cols-[5.5rem_1fr_13rem] items-center gap-3"
             >
               <span className="text-sm font-medium text-stone-800">
                 Machine {m + 1}
               </span>
-              <div className="relative h-5 overflow-hidden rounded bg-stone-100">
+              <div>
                 <div
-                  className="absolute inset-y-0 right-0 bg-garnet-100/70"
-                  style={{ width: `${cap.cushion}%` }}
-                />
-                <div
-                  className="absolute inset-y-0 left-0 flex"
-                  style={{ width: `${Math.min(100, util)}%` }}
+                  className="relative h-5 overflow-hidden rounded bg-stone-100"
+                  style={{ width: `${(N / scaleMax) * 100}%` }}
                 >
-                  {segments.map((seg) => (
-                    <div
-                      key={seg.key}
-                      title={`${seg.title} total — ${fmtH(seg.hours / machines)} h on this machine`}
-                      style={{ width: `${(seg.hours / total) * 100}%`, ...seg.style }}
-                    />
-                  ))}
+                  <div
+                    className="absolute inset-y-0 right-0 bg-garnet-100/70"
+                    style={{ width: `${cap.cushion}%` }}
+                  />
+                  <div
+                    className="absolute inset-y-0 left-0 flex"
+                    style={{ width: `${Math.min(100, util)}%` }}
+                  >
+                    {segments.map((seg) => (
+                      <div
+                        key={seg.key}
+                        title={`${seg.title} total — ${fmtH(seg.hours / machines)} h on this machine`}
+                        style={{ width: `${(seg.hours / total) * 100}%`, ...seg.style }}
+                      />
+                    ))}
+                  </div>
+                  <div
+                    className="absolute inset-y-0 w-0 border-l-2 border-dashed border-garnet-400"
+                    style={{ left: `${100 - cap.cushion}%` }}
+                  />
                 </div>
-                <div
-                  className="absolute inset-y-0 w-0 border-l-2 border-dashed border-garnet-400"
-                  style={{ left: `${100 - cap.cushion}%` }}
-                />
               </div>
               <span className="text-right text-xs text-stone-500 tabular-nums">
                 {fmtH(total / machines)} / {fmtH(N)} h
@@ -458,8 +453,9 @@ export default function Ch5CapacityPlanning() {
             </div>
             <div className="space-y-1.5">
               <p>
-                N = {cap.days} days × {cap.hoursPerDay} h = {fmtH(N)} h per
-                machine
+                N = {cap.days} days ×{' '}
+                {cap.shifts > 1 ? `${cap.shifts} shifts × ` : ''}
+                {cap.shiftHours} h = {fmtH(N)} h per machine
               </p>
               <p>
                 Reserved cushion = {fmtH(N)} × {cap.cushion}% = {fmtH(reserved)} h
