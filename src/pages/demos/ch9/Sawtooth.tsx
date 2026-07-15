@@ -27,9 +27,12 @@ function niceStep(rough: number): number {
 export const Sawtooth = memo(function Sawtooth({
   scenario,
   q,
+  showRopValue,
 }: {
   scenario: Scenario
   q: number
+  /** print the ROP's numeric value on its label (it's an answer) */
+  showRopValue: boolean
 }) {
   const d = dailyDemand(scenario)
   const rop = reorderPoint(scenario)
@@ -206,7 +209,9 @@ export const Sawtooth = memo(function Sawtooth({
             fill={INK_SOFT}
             className="tabular-nums"
           >
-            {`ROP = ${rop.toLocaleString('en-US', { maximumFractionDigits: 1 })}`}
+            {showRopValue
+              ? `ROP = ${rop.toLocaleString('en-US', { maximumFractionDigits: 1 })}`
+              : 'ROP'}
           </text>
 
           {/* the inventory sawtooth */}

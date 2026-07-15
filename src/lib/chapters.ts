@@ -123,7 +123,7 @@ export const chapters: Chapter[] = [
     title: 'Inventory Management (EOQ)',
     description:
       'The economic order quantity model — cost curves, the sawtooth diagram, and reorder points.',
-    status: 'coming-soon',
+    status: 'available',
     exam: 3,
   },
   {
@@ -131,8 +131,8 @@ export const chapters: Chapter[] = [
     label: 'Chapter 12',
     title: 'Supply Chain Design',
     description:
-      'Aggregate inventory value, weeks of supply, inventory turnover, and make/buy break-even analysis.',
-    status: 'coming-soon',
+      'Aggregate inventory value, weeks of supply, and inventory turnover — two companies side by side.',
+    status: 'available',
     exam: 3,
   },
   {

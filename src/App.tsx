@@ -6,6 +6,8 @@ import SuppBWaitingLines from './pages/demos/supp-b'
 import Ch6TheoryOfConstraints from './pages/demos/ch6'
 import Ch7ProjectManagement from './pages/demos/ch7'
 import Ch8Forecasting from './pages/demos/ch8'
+import Ch9Inventory from './pages/demos/ch9'
+import Ch12InventoryMetrics from './pages/demos/ch12'
 import Ch13FacilityLocation from './pages/demos/ch13'
 
 /**
@@ -23,6 +25,8 @@ export default function App() {
           <Route path="/ch6" element={<Ch6TheoryOfConstraints />} />
           <Route path="/ch7" element={<Ch7ProjectManagement />} />
           <Route path="/ch8" element={<Ch8Forecasting />} />
+          <Route path="/ch9" element={<Ch9Inventory />} />
+          <Route path="/ch12" element={<Ch12InventoryMetrics />} />
           <Route path="/ch13" element={<Ch13FacilityLocation />} />
           <Route path="/:slug" element={<ComingSoon />} />
         </Routes>

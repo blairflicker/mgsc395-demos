@@ -182,7 +182,7 @@ export default function Ch9Inventory() {
         <h2 className="mb-2 text-lg font-semibold text-stone-900">
           The inventory cycle
         </h2>
-        <Sawtooth scenario={scenario} q={q} />
+        <Sawtooth scenario={scenario} q={q} showRopValue={showAnswers} />
       </div>
 
       {/* The calculations */}

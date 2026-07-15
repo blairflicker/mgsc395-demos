@@ -46,7 +46,7 @@ export function turnover(aaiv: number, cogs: number): number | null {
   return aaiv > 0 ? cogs / aaiv : null
 }
 
-/** The two companies from the Chapter 12 slides' comparison. */
+/** Eagle Machine from the slides, plus an invented leaner firm to compare. */
 export const CLASS_COMPANIES: [Company, Company] = [
   {
     name: 'Eagle Machine',
