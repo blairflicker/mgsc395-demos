@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useRef } from 'react'
 import {
   holdingCost,
   orderingCost,
@@ -36,9 +36,10 @@ const toPath = (pts: { x: number; y: number }[]) =>
 const moneyTick = (v: number) => `$${Math.round(v).toLocaleString('en-US')}`
 
 /**
- * Ordering, holding, and total annual cost as Q varies over the slider
- * range, with a dashed reference line at the student's chosen Q and — when
- * answers are shown — a marker at Q* on the total-cost minimum.
+ * Ordering, holding, and total annual cost as Q varies, with the student's
+ * chosen Q as a grabbable dashed line (drag it, or use arrow keys, to move
+ * in steps of 5) and — when answers are shown — a marker at Q* on the
+ * total-cost minimum.
  */
 export const CostChart = memo(function CostChart({
   scenario,
@@ -46,13 +47,28 @@ export const CostChart = memo(function CostChart({
   qMin,
   qMax,
   showQStar,
+  onQChange,
 }: {
   scenario: Scenario
   q: number
   qMin: number
   qMax: number
   showQStar: boolean
+  onQChange: (q: number) => void
 }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const dragging = useRef(false)
+
+  const qFromClientX = (clientX: number): number | null => {
+    const svg = svgRef.current
+    if (!svg) return null
+    const rect = svg.getBoundingClientRect()
+    if (rect.width === 0) return null
+    const x = ((clientX - rect.left) / rect.width) * VW
+    const frac = Math.min(1, Math.max(0, (x - M.left) / PLOT_W))
+    const raw = qMin + frac * (qMax - qMin)
+    return Math.min(qMax, Math.max(qMin, Math.round(raw / 5) * 5))
+  }
   const series = [
     { id: 'ordering', label: 'Ordering cost', color: COLOR_ORDERING, at: (v: number) => orderingCost(scenario, v) },
     { id: 'holding', label: 'Holding cost', color: COLOR_HOLDING, at: (v: number) => holdingCost(scenario, v) },
@@ -91,6 +107,13 @@ export const CostChart = memo(function CostChart({
   const qLabelEnd = xPos(qc) > M.left + PLOT_W - 90
   const starX = Math.min(M.left + PLOT_W - 40, Math.max(M.left + 40, xPos(qs)))
 
+  // the label box that rides along with the grabbable line
+  const BOX_W = 116
+  const BOX_H = 32
+  const lineX = xPos(qc)
+  const boxX = lineX + 8 + BOX_W > M.left + PLOT_W ? lineX - 8 - BOX_W : lineX + 8
+  const boxY = M.top + 2
+
   return (
     <div>
       <div className="mb-1 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-stone-500">
@@ -111,6 +134,7 @@ export const CostChart = memo(function CostChart({
       </div>
       <div className="overflow-x-auto">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${VW} ${VH}`}
           className="w-full"
           style={{ minWidth: 560 }}
@@ -192,17 +216,6 @@ export const CostChart = memo(function CostChart({
             order quantity Q
           </text>
 
-          {/* chosen Q — dashed reference line */}
-          <line
-            x1={xPos(qc)}
-            y1={M.top}
-            x2={xPos(qc)}
-            y2={M.top + PLOT_H}
-            stroke={INK_SOFT}
-            strokeWidth="1.5"
-            strokeDasharray="4 3"
-          />
-
           {/* the cost curves */}
           {sampled.map((s) => (
             <path
@@ -261,6 +274,89 @@ export const CostChart = memo(function CostChart({
               className="tabular-nums"
             >
               {moneyTick(tcAtQ)}
+            </text>
+          </g>
+
+          {/* the grabbable chosen-Q line with its sliding label box */}
+          <g
+            role="slider"
+            aria-label="Your order quantity"
+            aria-valuemin={qMin}
+            aria-valuemax={qMax}
+            aria-valuenow={Math.round(qc)}
+            tabIndex={0}
+            onPointerDown={(e) => {
+              const v = qFromClientX(e.clientX)
+              if (v === null) return
+              dragging.current = true
+              try {
+                e.currentTarget.setPointerCapture(e.pointerId)
+              } catch {
+                /* no active pointer (synthetic event) — dragging still works */
+              }
+              onQChange(v)
+            }}
+            onPointerMove={(e) => {
+              if (!dragging.current) return
+              const v = qFromClientX(e.clientX)
+              if (v !== null) onQChange(v)
+            }}
+            onPointerUp={(e) => {
+              dragging.current = false
+              try {
+                e.currentTarget.releasePointerCapture(e.pointerId)
+              } catch {
+                /* capture may not exist — nothing to release */
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                e.preventDefault()
+                onQChange(Math.max(qMin, qc - 5))
+              } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                onQChange(Math.min(qMax, qc + 5))
+              }
+            }}
+            style={{ cursor: 'ew-resize', touchAction: 'none', outline: 'none' }}
+          >
+            <rect
+              x={lineX - 16}
+              y={M.top}
+              width={32}
+              height={PLOT_H}
+              fill="transparent"
+            />
+            <line
+              x1={lineX}
+              y1={M.top}
+              x2={lineX}
+              y2={M.top + PLOT_H}
+              stroke={INK_SOFT}
+              strokeWidth="1.5"
+              strokeDasharray="4 3"
+            />
+            <rect
+              x={boxX}
+              y={boxY}
+              width={BOX_W}
+              height={BOX_H}
+              rx="6"
+              fill="white"
+              stroke="#d6d3d1"
+            />
+            <text x={boxX + 8} y={boxY + 12} fontSize="8.5" fill={INK_MUTED}>
+              YOUR ORDER QUANTITY
+            </text>
+            <text
+              x={boxX + 8}
+              y={boxY + 26}
+              fontSize="12"
+              fontWeight="600"
+              fill="#292524"
+              className="tabular-nums"
+            >
+              {`${Math.round(qc).toLocaleString('en-US')} units`}
             </text>
           </g>
         </svg>

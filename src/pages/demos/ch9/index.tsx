@@ -131,39 +131,7 @@ export default function Ch9Inventory() {
         </div>
       </div>
 
-      {/* Your order quantity — the interactive heart */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-3 text-lg font-semibold text-stone-900">
-          Your order quantity
-        </h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="range"
-            min={range.min}
-            max={range.max}
-            step={1}
-            value={q}
-            onChange={(e) => setChosenQ(Number(e.target.value))}
-            aria-label="Chosen order quantity Q"
-            className="min-w-48 flex-1 accent-garnet-700"
-          />
-          <span className="flex items-center gap-1.5">
-            <span className="text-sm text-stone-600">Q =</span>
-            <input
-              type="number"
-              min={range.min}
-              max={range.max}
-              value={q}
-              onChange={(e) => setChosenQ(Number(e.target.value))}
-              aria-label="Chosen order quantity Q"
-              className="h-8 w-20 rounded-lg border border-stone-200 bg-white text-center text-sm tabular-nums focus:border-garnet-400 focus:outline-none"
-            />
-            <span className="text-sm text-stone-600">units</span>
-          </span>
-        </div>
-      </div>
-
-      {/* Annual costs vs Q */}
+      {/* Annual costs vs Q — drag the dashed line to choose Q */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <h2 className="mb-2 text-lg font-semibold text-stone-900">
           The annual costs
@@ -174,6 +142,7 @@ export default function Ch9Inventory() {
           qMin={range.min}
           qMax={range.max}
           showQStar={showAnswers}
+          onQChange={setChosenQ}
         />
       </div>
 
