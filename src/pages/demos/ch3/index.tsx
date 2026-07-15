@@ -499,22 +499,26 @@ export default function Ch3QualityControl() {
                 </button>
               ))}
             </div>
-            <div className="mt-3 min-h-10 border-t border-stone-100 pt-2 text-xs text-stone-600 tabular-nums">
+            <div className="mt-3 min-h-28 space-y-1 border-t border-stone-100 pt-3 text-sm text-stone-700 tabular-nums">
               {detail && (
                 <>
                   <div>
-                    <span className="font-semibold text-stone-700">
+                    <span className="font-semibold text-stone-900">
                       Box #{(detailIndex ?? 0) + 1}
                     </span>{' '}
                     <span className="text-stone-400">
                       {locked !== null ? '(selected — click it again to release)' : '(latest)'}
-                    </span>{' '}
-                    — {detail.values.map((v) => v.toFixed(2)).join(', ')}
+                    </span>
+                  </div>
+                  <div className="break-words">
+                    Observations: {detail.values.map((v) => v.toFixed(2)).join(', ')}
+                  </div>
+                  <div className="break-words">
+                    X̄ = ({detail.values.map((v) => v.toFixed(2)).join(' + ')}) /{' '}
+                    {detail.values.length} = {detail.mean.toFixed(2)}
                   </div>
                   <div>
-                    X̄ = ({detail.values.map((v) => v.toFixed(2)).join(' + ')}) /{' '}
-                    {detail.values.length} = {detail.mean.toFixed(2)} · R ={' '}
-                    {Math.max(...detail.values).toFixed(2)} −{' '}
+                    R = {Math.max(...detail.values).toFixed(2)} −{' '}
                     {Math.min(...detail.values).toFixed(2)} = {detail.range.toFixed(2)}
                   </div>
                 </>
