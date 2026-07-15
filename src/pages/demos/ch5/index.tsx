@@ -203,18 +203,19 @@ export default function Ch5CapacityPlanning() {
               ))}
             </tbody>
           </table>
-          <div className="flex flex-wrap items-end gap-x-8 gap-y-3 tabular-nums">
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-3 tabular-nums">
             {(
               [
-                ['Operating days', `${cap.days}/yr`],
-                ['Shifts', `${cap.shifts} × ${cap.shiftHours} h/day`],
-                ['Hours per machine (N)', `${fmtH(N)} h/yr`],
-                ['Target cushion (C)', `${cap.cushion}%`],
+                ['Operating', 'days', `${cap.days}/yr`],
+                ['', 'Shifts', `${cap.shifts} × ${cap.shiftHours} h/day`],
+                ['Hours per', 'machine (N)', `${fmtH(N)} h/yr`],
+                ['Target', 'cushion (C)', `${cap.cushion}%`],
               ] as const
-            ).map(([label, value]) => (
-              <span key={label}>
-                <span className="block text-xs font-semibold text-stone-500 uppercase">
-                  {label}
+            ).map(([top, bottom, value]) => (
+              <span key={bottom}>
+                <span className="flex h-8 flex-col justify-end text-xs leading-4 font-semibold text-stone-500 uppercase">
+                  {top !== '' && <span>{top}</span>}
+                  <span>{bottom}</span>
                 </span>
                 <span className="text-lg text-stone-700">{value}</span>
               </span>
