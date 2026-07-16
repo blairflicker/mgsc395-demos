@@ -24,12 +24,8 @@ const CELL_INPUT =
 const fmtQty = (v: number) =>
   v.toLocaleString('en-US', { maximumFractionDigits: 2 })
 
-const money = (v: number) => {
-  const r = Math.round(v * 100) / 100
-  return Number.isInteger(r)
-    ? `$${r.toLocaleString('en-US')}`
-    : `$${r.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-}
+/** dollars are just another unit — write the word, no "$" prefix */
+const fmtDollars = (v: number) => `${fmtQty(v)} dollars`
 
 /** ratios read like the slides: 2 → "2.0", 22.5 → "22.5" */
 const fmtRatio = (v: number) =>
@@ -38,7 +34,32 @@ const fmtRatio = (v: number) =>
     maximumFractionDigits: 2,
   })
 
+/** singular for a denominator unit: "months" → "month", "dollars" → "dollar" */
 const singular = (unit: string) => unit.replace(/s$/, '')
+
+type ValueRow = {
+  qty: number
+  unit: string
+  dollarsPerUnit: number | null
+  showDollars: boolean
+}
+
+/** the amount + unit a row contributes once its units/dollars toggle is set */
+const displayed = (r: ValueRow): { qty: number; unit: string } =>
+  r.showDollars && r.dollarsPerUnit !== null
+    ? { qty: r.qty * r.dollarsPerUnit, unit: 'dollars' }
+    : { qty: r.qty, unit: r.unit }
+
+/** the math shown inside a transformation chip, units carried through */
+const rowMath = (r: ValueRow): string => {
+  if (r.showDollars && r.dollarsPerUnit !== null) {
+    return (
+      `${fmtQty(r.qty)} ${r.unit} × ${fmtQty(r.dollarsPerUnit)} dollars/${singular(r.unit)}` +
+      ` = ${fmtDollars(r.qty * r.dollarsPerUnit)}`
+    )
+  }
+  return `${fmtQty(r.qty)} ${r.unit}`
+}
 
 function TrashIcon() {
   return (
@@ -79,7 +100,7 @@ function ProcessNetwork() {
   ]
   const at = (n: number) => nodes.find((p) => p.n === n)!
   return (
-    <svg viewBox="0 0 120 90" className="mx-auto h-20 w-28" aria-hidden>
+    <svg viewBox="0 0 120 90" className="mx-auto h-16 w-24" aria-hidden>
       <defs>
         <marker id="ch1-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
           <path d="M0,0 L8,4 L0,8 Z" fill="#a8a29e" />
@@ -117,6 +138,67 @@ function ProcessNetwork() {
   )
 }
 
+/** one input/output card in the transformation: name, the math with units,
+ *  and its own units/dollars toggle on the right */
+function ValueChip({
+  name,
+  color,
+  math,
+  showDollars,
+  canDollars,
+  onToggle,
+  selectable,
+  selected,
+  onSelect,
+}: {
+  name: string
+  color: string
+  math: string
+  showDollars: boolean
+  canDollars: boolean
+  onToggle: () => void
+  selectable?: boolean
+  selected?: boolean
+  onSelect?: () => void
+}) {
+  const body = (
+    <>
+      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <span className="min-w-0">
+        <span className="block text-xs text-stone-500">{name}</span>
+        <span className="block text-sm font-medium text-stone-800 tabular-nums">{math}</span>
+      </span>
+    </>
+  )
+  return (
+    <div
+      className={`flex items-start gap-2 rounded-lg border bg-white px-2.5 py-1.5 ${
+        selected ? 'border-garnet-400 ring-2 ring-garnet-200' : 'border-stone-200'
+      }`}
+    >
+      {selectable ? (
+        <button
+          onClick={onSelect}
+          aria-pressed={selected}
+          className="flex min-w-0 flex-1 items-start gap-2 text-left"
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-start gap-2">{body}</div>
+      )}
+      <button
+        onClick={onToggle}
+        disabled={!canDollars}
+        aria-pressed={showDollars}
+        className="mt-0.5 w-16 shrink-0 rounded-lg border border-stone-300 bg-white px-2 py-0.5 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+      >
+        {showDollars ? 'dollars' : 'units'}
+      </button>
+    </div>
+  )
+}
+
 export default function Ch1Productivity() {
   const [data, setData] = useState<Transformation>(CLASS_CASE)
   const [isClass, setIsClass] = useState(true)
@@ -132,8 +214,7 @@ export default function Ch1Productivity() {
   }, [])
 
   const { output, inputs } = data
-  const selected =
-    inputs.find((r) => r.id === selectedId) ?? inputs[0] ?? null
+  const selected = inputs.find((r) => r.id === selectedId) ?? inputs[0] ?? null
 
   // ── editing ─────────────────────────────────────────────
   const patch = (next: Partial<Transformation>) => {
@@ -174,61 +255,27 @@ export default function Ch1Productivity() {
     setShowAnswers(false)
   }
 
-  // ── the productivity fraction ───────────────────────────
-  const numIsDollar = output.showDollars && output.dollarsPerUnit !== null
-  const numValue = numIsDollar ? output.qty * output.dollarsPerUnit! : output.qty
-  const numLabel = numIsDollar
-    ? `${money(numValue)} of ${output.name.toLowerCase() || 'output'}`
-    : `${fmtQty(output.qty)} ${output.unit}`
-
+  // ── the productivity fraction, careful with units ───────
   const terms = mode === 'single' ? (selected ? [selected] : []) : inputs
-  const termLabel = (r: InputRow) =>
-    r.showDollars && r.dollarsPerUnit !== null
-      ? `${money(r.qty * r.dollarsPerUnit)} ${r.name.toLowerCase() || 'input'}`
-      : `${fmtQty(r.qty)} ${r.unit} ${r.name.toLowerCase()}`.trimEnd()
 
-  const allDollar =
-    terms.length > 0 && terms.every((t) => t.showDollars && t.dollarsPerUnit !== null)
-  let resultLine: string | null = null
-  if (allDollar) {
-    const S = terms.reduce((s, t) => s + t.qty * t.dollarsPerUnit!, 0)
-    if (S > 0) {
-      resultLine = numIsDollar
-        ? `= ${fmtRatio(numValue / S)} — every input dollar becomes ${money(numValue / S)} of output`
-        : `= ${fmtRatio(numValue / S)} ${output.unit} per input $`
-    }
-  } else if (terms.length === 1 && terms[0].qty > 0) {
-    const t = terms[0]
-    resultLine = numIsDollar
-      ? `= ${money(numValue / t.qty)} per ${singular(t.unit)}`
-      : `= ${fmtRatio(numValue / t.qty)} ${output.unit} per ${singular(t.unit)}`
+  // combine like units in the denominator — dollars are dollars, hours are
+  // hours — summing each unit group into a single term
+  const groups = new Map<string, number>()
+  for (const t of terms) {
+    const d = displayed(t)
+    groups.set(d.unit, (groups.get(d.unit) ?? 0) + d.qty)
   }
+  const denomGroups = [...groups.entries()].map(([unit, qty]) => ({ unit, qty }))
+  const num = displayed(output)
 
-  const chip = (
-    label: string,
-    amount: string,
-    color: string,
-    opts?: { onClick?: () => void; selected?: boolean; clickable?: boolean },
-  ) => {
-    const cls = opts?.selected
-      ? 'flex items-center gap-2 rounded-lg border border-garnet-400 bg-white px-2.5 py-1.5 text-left ring-2 ring-garnet-200'
-      : `flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-left ${opts?.clickable ? 'hover:border-garnet-300' : ''}`
-    const body = (
-      <>
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-        <span>
-          <span className="block text-xs text-stone-500">{label}</span>
-          <span className="text-sm font-medium text-stone-800 tabular-nums">{amount}</span>
-        </span>
-      </>
-    )
-    return opts?.clickable ? (
-      <button onClick={opts.onClick} aria-pressed={opts.selected} className={cls}>
-        {body}
-      </button>
-    ) : (
-      <div className={cls}>{body}</div>
-    )
+  let resultLine: string | null = null
+  if (denomGroups.length === 1 && denomGroups[0].qty > 0) {
+    const d = denomGroups[0]
+    const ratio = num.qty / d.qty
+    resultLine =
+      d.unit === num.unit
+        ? `= ${fmtRatio(ratio)}` // like units cancel — a pure number
+        : `= ${fmtRatio(ratio)} ${num.unit} per ${singular(d.unit)}`
   }
 
   return (
@@ -270,20 +317,20 @@ export default function Ch1Productivity() {
           The worksheet
         </h2>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-160 text-sm">
+          <table className="w-full min-w-150 text-sm">
             <thead>
               <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
                 <th className="w-36 py-2 pr-2 font-semibold">Name</th>
                 <th className="w-32 py-2 pr-2 font-semibold">Type</th>
-                <th className="w-20 py-2 pr-2 font-semibold">Qty</th>
+                <th className="w-20 py-2 pr-2 font-semibold">Quantity</th>
+                <th className="w-44 py-2 pr-2 font-semibold">Dollars / unit</th>
                 <th className="w-24 py-2 pr-2 font-semibold">Unit</th>
-                <th className="w-24 py-2 pr-2 font-semibold">$ / unit</th>
-                <th className="w-24 py-2 pr-2 text-right font-semibold">Total $</th>
-                <th className="w-24 py-2 pr-2 font-semibold">Show as</th>
+                <th className="w-32 py-2 pr-2 text-right font-semibold">Total</th>
                 <th className="w-9 py-2" aria-label="Delete row" />
               </tr>
             </thead>
             <tbody className="tabular-nums">
+              {/* output row */}
               <tr className="border-b border-stone-200 bg-stone-50">
                 <td className="py-1 pr-2">
                   <input
@@ -318,6 +365,32 @@ export default function Ch1Productivity() {
                   />
                 </td>
                 <td className="py-1 pr-2">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={output.dollarsPerUnit ?? ''}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        if (raw === '') {
+                          patchOutput({ dollarsPerUnit: null, showDollars: false })
+                          return
+                        }
+                        const v = Number(raw)
+                        if (Number.isFinite(v)) patchOutput({ dollarsPerUnit: Math.max(0, v) })
+                      }}
+                      aria-label="Output dollars per unit"
+                      className={`${CELL_INPUT} w-20`}
+                    />
+                    {output.dollarsPerUnit !== null && output.unit && (
+                      <span className="whitespace-nowrap text-xs text-stone-500">
+                        dollars/{singular(output.unit)}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="py-1 pr-2">
                   <input
                     type="text"
                     value={output.unit}
@@ -326,40 +399,12 @@ export default function Ch1Productivity() {
                     className={CELL_INPUT}
                   />
                 </td>
-                <td className="py-1 pr-2">
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={output.dollarsPerUnit ?? ''}
-                    onChange={(e) => {
-                      const raw = e.target.value
-                      if (raw === '') {
-                        patchOutput({ dollarsPerUnit: null, showDollars: false })
-                        return
-                      }
-                      const v = Number(raw)
-                      if (Number.isFinite(v)) patchOutput({ dollarsPerUnit: Math.max(0, v) })
-                    }}
-                    aria-label="Output dollars per unit"
-                    className={CELL_INPUT}
-                  />
-                </td>
                 <td className="py-1 pr-2 text-right text-stone-700">
-                  {totalDollars(output) !== null ? money(totalDollars(output)!) : '—'}
-                </td>
-                <td className="py-1 pr-2">
-                  <button
-                    onClick={() => patchOutput({ showDollars: !output.showDollars })}
-                    disabled={output.dollarsPerUnit === null}
-                    aria-pressed={output.showDollars}
-                    className="w-16 rounded-lg border border-stone-300 bg-white px-2 py-0.5 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-                  >
-                    {output.showDollars ? 'dollars' : 'units'}
-                  </button>
+                  {totalDollars(output) !== null ? fmtDollars(totalDollars(output)!) : '—'}
                 </td>
                 <td className="py-1" />
               </tr>
+              {/* input rows */}
               {inputs.map((r) => (
                 <tr key={r.id} className="border-b border-stone-100 last:border-0">
                   <td className="py-1 pr-2">
@@ -406,6 +451,33 @@ export default function Ch1Productivity() {
                     />
                   </td>
                   <td className="py-1 pr-2">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={r.dollarsPerUnit ?? ''}
+                        onChange={(e) => {
+                          const raw = e.target.value
+                          if (raw === '') {
+                            patchInput(r.id, { dollarsPerUnit: null, showDollars: false })
+                            return
+                          }
+                          const v = Number(raw)
+                          if (Number.isFinite(v))
+                            patchInput(r.id, { dollarsPerUnit: Math.max(0, v) })
+                        }}
+                        aria-label={`Dollars per unit of ${r.name || 'input'}`}
+                        className={`${CELL_INPUT} w-20`}
+                      />
+                      {r.dollarsPerUnit !== null && r.unit && (
+                        <span className="whitespace-nowrap text-xs text-stone-500">
+                          dollars/{singular(r.unit)}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-1 pr-2">
                     <input
                       type="text"
                       value={r.unit}
@@ -414,38 +486,8 @@ export default function Ch1Productivity() {
                       className={CELL_INPUT}
                     />
                   </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={r.dollarsPerUnit ?? ''}
-                      onChange={(e) => {
-                        const raw = e.target.value
-                        if (raw === '') {
-                          patchInput(r.id, { dollarsPerUnit: null, showDollars: false })
-                          return
-                        }
-                        const v = Number(raw)
-                        if (Number.isFinite(v))
-                          patchInput(r.id, { dollarsPerUnit: Math.max(0, v) })
-                      }}
-                      aria-label={`Dollars per unit of ${r.name || 'input'}`}
-                      className={CELL_INPUT}
-                    />
-                  </td>
                   <td className="py-1 pr-2 text-right text-stone-700">
-                    {totalDollars(r) !== null ? money(totalDollars(r)!) : '—'}
-                  </td>
-                  <td className="py-1 pr-2">
-                    <button
-                      onClick={() => patchInput(r.id, { showDollars: !r.showDollars })}
-                      disabled={r.dollarsPerUnit === null}
-                      aria-pressed={r.showDollars}
-                      className="w-16 rounded-lg border border-stone-300 bg-white px-2 py-0.5 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-                    >
-                      {r.showDollars ? 'dollars' : 'units'}
-                    </button>
+                    {totalDollars(r) !== null ? fmtDollars(totalDollars(r)!) : '—'}
                   </td>
                   <td className="py-1">
                     <button
@@ -489,32 +531,32 @@ export default function Ch1Productivity() {
             ))}
           </div>
         </div>
-        <div className="grid items-stretch gap-2 md:grid-cols-[1fr_auto_1.1fr_auto_1fr]">
+        <div className="grid items-stretch gap-2 md:grid-cols-[1.5fr_auto_0.7fr_auto_1.5fr]">
           <div className="rounded-xl border border-stone-300 bg-stone-50/60 p-3">
             <div className="mb-2 text-center text-sm font-semibold text-stone-800">
               Inputs
             </div>
             <div className="flex flex-col items-stretch gap-1.5">
-              {inputs.map((r) =>
-                chip(
-                  r.name || '(input)',
-                  r.showDollars && r.dollarsPerUnit !== null
-                    ? money(r.qty * r.dollarsPerUnit)
-                    : `${fmtQty(r.qty)} ${r.unit}`,
-                  KIND_COLOR[r.kind],
-                  {
-                    clickable: mode === 'single',
-                    selected: mode === 'single' && selected?.id === r.id,
-                    onClick: () => setSelectedId(r.id),
-                  },
-                ),
-              )}
+              {inputs.map((r) => (
+                <ValueChip
+                  key={r.id}
+                  name={r.name || '(input)'}
+                  color={KIND_COLOR[r.kind]}
+                  math={rowMath(r)}
+                  showDollars={r.showDollars}
+                  canDollars={r.dollarsPerUnit !== null}
+                  onToggle={() => patchInput(r.id, { showDollars: !r.showDollars })}
+                  selectable={mode === 'single'}
+                  selected={mode === 'single' && selected?.id === r.id}
+                  onSelect={() => setSelectedId(r.id)}
+                />
+              ))}
             </div>
           </div>
           <Arrow />
           <div className="rounded-xl border border-stone-300 bg-stone-50/60 p-3">
             <div className="mb-2 text-center text-sm font-semibold text-stone-800">
-              Processes and operations
+              Processes and<br />operations
             </div>
             <ProcessNetwork />
           </div>
@@ -524,13 +566,14 @@ export default function Ch1Productivity() {
               Outputs
             </div>
             <div className="flex flex-col items-stretch gap-1.5">
-              {chip(
-                output.name || '(output)',
-                output.showDollars && output.dollarsPerUnit !== null
-                  ? money(output.qty * output.dollarsPerUnit)
-                  : `${fmtQty(output.qty)} ${output.unit}`,
-                OUTPUT_COLOR,
-              )}
+              <ValueChip
+                name={output.name || '(output)'}
+                color={OUTPUT_COLOR}
+                math={rowMath(output)}
+                showDollars={output.showDollars}
+                canDollars={output.dollarsPerUnit !== null}
+                onToggle={() => patchOutput({ showDollars: !output.showDollars })}
+              />
             </div>
           </div>
         </div>
@@ -570,10 +613,14 @@ export default function Ch1Productivity() {
           ) : (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-lg text-stone-800 tabular-nums">
               <span className="inline-flex flex-col items-center">
-                <span className="px-2">{numLabel}</span>
+                <span className="px-2">
+                  {fmtQty(num.qty)} {num.unit}
+                </span>
                 <span className="w-full border-t-2 border-stone-500" />
                 <span className="px-2 text-center">
-                  {terms.map((t) => termLabel(t)).join(' + ')}
+                  {denomGroups
+                    .map((g) => `${fmtQty(g.qty)} ${g.unit}`)
+                    .join(' + ')}
                 </span>
               </span>
               {resultLine !== null && (
