@@ -21,6 +21,13 @@ const CELL_INPUT =
   'w-full rounded border border-transparent bg-transparent px-1.5 py-0.5 text-sm ' +
   'hover:border-stone-200 focus:border-garnet-400 focus:bg-white focus:outline-none'
 
+/** the dollars-per-unit input: a *fixed* width (not w-full) so the
+ *  right-aligned number lands at the same edge on every row, regardless of
+ *  how long the unit beside it is */
+const RATE_INPUT =
+  'w-16 rounded border border-transparent bg-transparent px-1.5 py-0.5 text-sm text-right ' +
+  'hover:border-stone-200 focus:border-garnet-400 focus:bg-white focus:outline-none'
+
 const fmtQty = (v: number) =>
   v.toLocaleString('en-US', { maximumFractionDigits: 2 })
 
@@ -350,7 +357,7 @@ export default function Ch1Productivity() {
                     className={`${CELL_INPUT} font-medium`}
                   />
                 </td>
-                <td className="py-1 pr-2 pl-1.5 font-medium text-stone-800">
+                <td className="py-1 pr-2 font-medium text-stone-800">
                   <span className="flex items-center gap-1.5">
                     <span
                       className="inline-block h-2 w-2 shrink-0 rounded-full"
@@ -398,7 +405,7 @@ export default function Ch1Productivity() {
                         if (Number.isFinite(v)) patchOutput({ dollarsPerUnit: Math.max(0, v) })
                       }}
                       aria-label="Output dollars per unit"
-                      className={`${CELL_INPUT} w-16 text-right`}
+                      className={RATE_INPUT}
                     />
                     {output.dollarsPerUnit !== null && output.unit && (
                       <span className="whitespace-nowrap text-xs text-stone-500">
@@ -485,7 +492,7 @@ export default function Ch1Productivity() {
                             patchInput(r.id, { dollarsPerUnit: Math.max(0, v) })
                         }}
                         aria-label={`Dollars per unit of ${r.name || 'input'}`}
-                        className={`${CELL_INPUT} w-16 text-right`}
+                        className={RATE_INPUT}
                       />
                       {r.dollarsPerUnit !== null && r.unit && (
                         <span className="whitespace-nowrap text-xs text-stone-500">
