@@ -330,9 +330,9 @@ export default function Ch1Productivity() {
               <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
                 <th className="w-36 py-2 pr-2 font-semibold">Name</th>
                 <th className="w-32 py-2 pr-2 font-semibold">Type</th>
-                <th className="w-20 py-2 pr-2 font-semibold">Quantity</th>
-                <th className="w-44 py-2 pr-2 font-semibold">Dollars / unit</th>
+                <th className="w-20 py-2 pr-2 text-right font-semibold">Quantity</th>
                 <th className="w-24 py-2 pr-2 font-semibold">Unit</th>
+                <th className="w-44 py-2 pr-2 font-semibold">Dollars / unit</th>
                 <th className="w-32 py-2 pr-2 text-right font-semibold">Total</th>
                 <th className="w-9 py-2" aria-label="Delete row" />
               </tr>
@@ -369,6 +369,15 @@ export default function Ch1Productivity() {
                       if (Number.isFinite(v)) patchOutput({ qty: Math.max(0, v) })
                     }}
                     aria-label="Output quantity"
+                    className={`${CELL_INPUT} text-right`}
+                  />
+                </td>
+                <td className="py-1 pr-2">
+                  <input
+                    type="text"
+                    value={output.unit}
+                    onChange={(e) => patchOutput({ unit: e.target.value })}
+                    aria-label="Output unit"
                     className={CELL_INPUT}
                   />
                 </td>
@@ -389,7 +398,7 @@ export default function Ch1Productivity() {
                         if (Number.isFinite(v)) patchOutput({ dollarsPerUnit: Math.max(0, v) })
                       }}
                       aria-label="Output dollars per unit"
-                      className={`${CELL_INPUT} w-20`}
+                      className={`${CELL_INPUT} w-16 text-right`}
                     />
                     {output.dollarsPerUnit !== null && output.unit && (
                       <span className="whitespace-nowrap text-xs text-stone-500">
@@ -397,15 +406,6 @@ export default function Ch1Productivity() {
                       </span>
                     )}
                   </div>
-                </td>
-                <td className="py-1 pr-2">
-                  <input
-                    type="text"
-                    value={output.unit}
-                    onChange={(e) => patchOutput({ unit: e.target.value })}
-                    aria-label="Output unit"
-                    className={CELL_INPUT}
-                  />
                 </td>
                 <td className="py-1 pr-2 text-right text-stone-700">
                   {totalDollars(output) !== null ? fmtDollars(totalDollars(output)!) : '—'}
@@ -455,6 +455,15 @@ export default function Ch1Productivity() {
                         if (Number.isFinite(v)) patchInput(r.id, { qty: Math.max(0, v) })
                       }}
                       aria-label={`Quantity of ${r.name || 'input'}`}
+                      className={`${CELL_INPUT} text-right`}
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      type="text"
+                      value={r.unit}
+                      onChange={(e) => patchInput(r.id, { unit: e.target.value })}
+                      aria-label={`Unit of ${r.name || 'input'}`}
                       className={CELL_INPUT}
                     />
                   </td>
@@ -476,7 +485,7 @@ export default function Ch1Productivity() {
                             patchInput(r.id, { dollarsPerUnit: Math.max(0, v) })
                         }}
                         aria-label={`Dollars per unit of ${r.name || 'input'}`}
-                        className={`${CELL_INPUT} w-20`}
+                        className={`${CELL_INPUT} w-16 text-right`}
                       />
                       {r.dollarsPerUnit !== null && r.unit && (
                         <span className="whitespace-nowrap text-xs text-stone-500">
@@ -484,15 +493,6 @@ export default function Ch1Productivity() {
                         </span>
                       )}
                     </div>
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      type="text"
-                      value={r.unit}
-                      onChange={(e) => patchInput(r.id, { unit: e.target.value })}
-                      aria-label={`Unit of ${r.name || 'input'}`}
-                      className={CELL_INPUT}
-                    />
                   </td>
                   <td className="py-1 pr-2 text-right text-stone-700">
                     {totalDollars(r) !== null ? fmtDollars(totalDollars(r)!) : '—'}
