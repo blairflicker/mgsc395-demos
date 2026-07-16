@@ -44,15 +44,22 @@ const moneyUnit = (v: number) => {
     : `$${v.toFixed(3)}`
 }
 
-/** plain per-unit number for the cost equations — 0.68, 0.163 */
-const num3 = (v: number) =>
-  v.toLocaleString('en-US', { maximumFractionDigits: 3 })
-
 /** the chosen-Q line starts at 60% of the axis, snapped to the drag step */
 const defaultQ = (xMax: number, step: number) =>
   Math.min(xMax, Math.max(0, Math.round((0.6 * xMax) / step) * step))
 
+/** a colored dot that ties a calculation line to its chart color */
+const Dot = ({ color }: { color: string }) => (
+  <span
+    className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
+    style={{ backgroundColor: color }}
+  />
+)
+
+type Mode = 'single' | 'compare'
+
 export default function SuppABreakEven() {
+  const [mode, setMode] = useState<Mode>('single')
   const [single, setSingle] = useState<SingleCase>({ ...CLASS_SINGLE })
   const [compare, setCompare] = useState<CompareCase>({ ...CLASS_COMPARE })
   const [qSingle, setQSingle] = useState(() => {
@@ -155,176 +162,233 @@ export default function SuppABreakEven() {
         </button>
       </div>
 
-      {/* One process — revenue vs total cost */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-3 text-lg font-semibold text-stone-900">One process</h2>
-        <div className="mb-3 flex flex-wrap items-end gap-x-8 gap-y-3 tabular-nums">
-          {(
-            [
-              ['Price (p)', `${money(single.price)}/patient`],
-              ['Variable cost (c)', `${moneyUnit(single.varCost)}/patient`],
-              ['Fixed cost (F)', `${money(single.fixed)}/yr`],
-            ] as const
-          ).map(([label, value]) => (
-            <span key={label}>
-              <span className="block text-xs font-semibold text-stone-500 uppercase">
-                {label}
-              </span>
-              <span className="text-lg text-stone-700">{value}</span>
-            </span>
-          ))}
-        </div>
-        <BreakEvenChart
-          lines={[
-            {
-              id: 'revenue',
-              label: 'Total revenue',
-              color: COLOR_REVENUE,
-              at: (v) => revenueAt(single, v),
-            },
-            {
-              id: 'cost',
-              label: 'Total cost',
-              color: COLOR_COST,
-              at: (v) => costAt(single, v),
-            },
-          ]}
-          xMax={xMaxSingle}
-          step={stepSingle}
-          unit="patients"
-          yourLabel="YOUR VOLUME"
-          q={qSingle}
-          onQChange={setChosenSingle}
-          crossingQ={qbe}
-          crossingLabel={
-            <>
-              Q
-              <tspan dy="3" fontSize="8">
-                BE
-              </tspan>
-              <tspan dy="-3">{` = ${fmtNum(qbe)}`}</tspan>
-            </>
-          }
-          showCrossing={showAnswers}
-          ariaLabel="Total revenue and total cost as the yearly patient volume varies"
-        />
-        <div className="mt-4 border-t border-stone-100 pt-3 text-sm">
-          <span className="font-semibold text-stone-800">
-            At {fmtNum(qSingle)} patients:
-          </span>{' '}
-          <span className="text-stone-600 tabular-nums">
-            {profit === 0
-              ? `revenue ${money(revenueAt(single, qSingle))} = cost ${money(costAt(single, qSingle))} — break even`
-              : `revenue ${money(revenueAt(single, qSingle))} − cost ${money(costAt(single, qSingle))} = ${money(Math.abs(profit))} ${profit > 0 ? 'profit' : 'loss'}`}
-          </span>
-        </div>
+      {/* One process vs. two processes */}
+      <div className="mb-4 flex overflow-hidden rounded-lg border border-stone-300 text-sm">
+        {(
+          [
+            ['single', 'One process'],
+            ['compare', 'Two processes — make or buy'],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => setMode(value)}
+            aria-pressed={mode === value}
+            className={
+              mode === value
+                ? 'bg-garnet-800 px-4 py-2 font-medium text-white'
+                : 'bg-white px-4 py-2 text-stone-700 hover:bg-stone-50'
+            }
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Two processes — make or buy */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-3 text-lg font-semibold text-stone-900">
-          Two processes — make or buy
-        </h2>
-        <div className="mb-3 flex flex-wrap items-end gap-x-8 gap-y-3 tabular-nums">
-          {(
-            [
-              ['Make — fixed cost', money(compare.fixedMake), COLOR_MAKE],
-              ['Make — per page', `${moneyUnit(compare.varMake)}/page`, COLOR_MAKE],
-              ['Buy — fixed cost', money(compare.fixedBuy), COLOR_BUY],
-              ['Buy — per page', `${moneyUnit(compare.varBuy)}/page`, COLOR_BUY],
-            ] as const
-          ).map(([label, value, color]) => (
-            <span key={label}>
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-stone-500 uppercase">
-                <span
-                  className="inline-block h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: color }}
-                />
-                {label}
+      {/* One process — revenue vs total cost */}
+      {mode === 'single' && (
+        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-end gap-x-8 gap-y-3 tabular-nums">
+            {(
+              [
+                ['Price (p)', `${money(single.price)}/patient`, COLOR_REVENUE],
+                ['Variable cost (c)', `${moneyUnit(single.varCost)}/patient`, COLOR_COST],
+                ['Fixed cost (F)', `${money(single.fixed)}/yr`, COLOR_COST],
+              ] as const
+            ).map(([label, value]) => (
+              <span key={label}>
+                <span className="block text-xs font-semibold text-stone-500 uppercase">
+                  {label}
+                </span>
+                <span className="text-lg text-stone-700">{value}</span>
               </span>
-              <span className="text-lg text-stone-700">{value}</span>
+            ))}
+          </div>
+          <BreakEvenChart
+            lines={[
+              {
+                id: 'revenue',
+                label: 'Total revenue',
+                color: COLOR_REVENUE,
+                at: (v) => revenueAt(single, v),
+              },
+              {
+                id: 'cost',
+                label: 'Total cost',
+                color: COLOR_COST,
+                at: (v) => costAt(single, v),
+              },
+            ]}
+            xMax={xMaxSingle}
+            step={stepSingle}
+            unit="patients"
+            yourLabel="YOUR VOLUME"
+            q={qSingle}
+            onQChange={setChosenSingle}
+            crossingQ={qbe}
+            crossingLabel={
+              <>
+                Q
+                <tspan dy="3" fontSize="8">
+                  BE
+                </tspan>
+                <tspan dy="-3">{` = ${fmtNum(qbe)}`}</tspan>
+              </>
+            }
+            showCrossing={showAnswers}
+            ariaLabel="Total revenue and total cost as the yearly patient volume varies"
+          />
+          <div className="mt-4 border-t border-stone-100 pt-3 text-sm">
+            <span className="font-semibold text-stone-800">
+              At {fmtNum(qSingle)} patients:
+            </span>{' '}
+            <span className="text-stone-600 tabular-nums">
+              {profit === 0
+                ? `revenue ${money(revenueAt(single, qSingle))} = cost ${money(costAt(single, qSingle))} — break even`
+                : `revenue ${money(revenueAt(single, qSingle))} − cost ${money(costAt(single, qSingle))} = ${money(Math.abs(profit))} ${profit > 0 ? 'profit' : 'loss'}`}
             </span>
-          ))}
+          </div>
         </div>
-        <BreakEvenChart
-          lines={[
-            {
-              id: 'make',
-              label: 'Cost of making',
-              color: COLOR_MAKE,
-              at: (v) => makeCostAt(compare, v),
-            },
-            {
-              id: 'buy',
-              label: 'Cost of buying',
-              color: COLOR_BUY,
-              at: (v) => buyCostAt(compare, v),
-            },
-          ]}
-          xMax={xMaxCompare}
-          step={stepCompare}
-          unit="pages"
-          yourLabel="YOUR VOLUME"
-          q={qCompare}
-          onQChange={setChosenCompare}
-          crossingQ={qInd}
-          crossingLabel={`Q = ${fmtNum(qInd)}`}
-          showCrossing={showAnswers}
-          ariaLabel="Cost of making and cost of buying as the page volume varies"
-        />
-        <div className="mt-4 border-t border-stone-100 pt-3 text-sm">
-          <span className="font-semibold text-stone-800">
-            At {fmtNum(qCompare)} pages:
-          </span>{' '}
-          <span className="text-stone-600 tabular-nums">
-            {makeAtQ === buyAtQ
-              ? `buy costs ${money2(buyAtQ)} and make costs ${money2(makeAtQ)} — they cost the same`
-              : buyAtQ < makeAtQ
-                ? `buy costs ${money2(buyAtQ)}, make costs ${money2(makeAtQ)} — buy is cheaper by ${money2(makeAtQ - buyAtQ)}`
-                : `buy costs ${money2(buyAtQ)}, make costs ${money2(makeAtQ)} — make is cheaper by ${money2(buyAtQ - makeAtQ)}`}
-          </span>
+      )}
+
+      {/* Two processes — make or buy */}
+      {mode === 'compare' && (
+        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-end gap-x-8 gap-y-3 tabular-nums">
+            {(
+              [
+                ['Make — fixed cost', money(compare.fixedMake), COLOR_MAKE],
+                ['Make — per page', `${moneyUnit(compare.varMake)}/page`, COLOR_MAKE],
+                ['Buy — fixed cost', money(compare.fixedBuy), COLOR_BUY],
+                ['Buy — per page', `${moneyUnit(compare.varBuy)}/page`, COLOR_BUY],
+              ] as const
+            ).map(([label, value, color]) => (
+              <span key={label}>
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-stone-500 uppercase">
+                  <span
+                    className="inline-block h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: color }}
+                  />
+                  {label}
+                </span>
+                <span className="text-lg text-stone-700">{value}</span>
+              </span>
+            ))}
+          </div>
+          <BreakEvenChart
+            lines={[
+              {
+                id: 'make',
+                label: 'Cost of making',
+                color: COLOR_MAKE,
+                at: (v) => makeCostAt(compare, v),
+              },
+              {
+                id: 'buy',
+                label: 'Cost of buying',
+                color: COLOR_BUY,
+                at: (v) => buyCostAt(compare, v),
+              },
+            ]}
+            xMax={xMaxCompare}
+            step={stepCompare}
+            unit="pages"
+            yourLabel="YOUR VOLUME"
+            q={qCompare}
+            onQChange={setChosenCompare}
+            crossingQ={qInd}
+            crossingLabel={`Q = ${fmtNum(qInd)}`}
+            showCrossing={showAnswers}
+            ariaLabel="Cost of making and cost of buying as the page volume varies"
+          />
+          <div className="mt-4 border-t border-stone-100 pt-3 text-sm">
+            <span className="font-semibold text-stone-800">
+              At {fmtNum(qCompare)} pages:
+            </span>{' '}
+            <span className="text-stone-600 tabular-nums">
+              {makeAtQ === buyAtQ
+                ? `buy costs ${money2(buyAtQ)} and make costs ${money2(makeAtQ)} — they cost the same`
+                : buyAtQ < makeAtQ
+                  ? `buy costs ${money2(buyAtQ)}, make costs ${money2(makeAtQ)} — buy is cheaper by ${money2(makeAtQ - buyAtQ)}`
+                  : `buy costs ${money2(buyAtQ)}, make costs ${money2(makeAtQ)} — make is cheaper by ${money2(buyAtQ - makeAtQ)}`}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* The calculations */}
       {showAnswers && (
         <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-          <h2 className="mb-3 text-lg font-semibold text-stone-900">
+          <h2 className="mb-4 text-lg font-semibold text-stone-900">
             The calculations
           </h2>
-          <div className="space-y-4 text-sm text-stone-700 tabular-nums">
-            <div className="space-y-1.5">
-              <p>
-                Contribution = {fmtNum(single.price, 2)} − {num3(single.varCost)}{' '}
-                = {moneyUnit(cm)} per patient
-              </p>
-              <p>
-                Q<sub>BE</sub> = {fmtNum(single.fixed)} / {num3(cm)} ={' '}
-                {fmtNum(qbe)} patients
-              </p>
-              <p>
-                Check: revenue({fmtNum(qbe)}) = {money(revenueAt(single, qbe))} ={' '}
-                cost({fmtNum(qbe)})
-              </p>
+
+          {mode === 'single' ? (
+            <div className="space-y-3 text-base text-stone-800 tabular-nums">
+              <div className="space-y-2">
+                <p>
+                  <Dot color={COLOR_REVENUE} />
+                  Total revenue = p × Q = {money(single.price)} × Q
+                </p>
+                <p>
+                  <Dot color={COLOR_COST} />
+                  Total cost = F + c × Q = {money(single.fixed)} +{' '}
+                  {moneyUnit(single.varCost)} × Q
+                </p>
+              </div>
+              <div className="space-y-2 border-t border-stone-100 pt-3">
+                <p className="text-xs font-semibold text-stone-500 uppercase">
+                  Break even where revenue = cost
+                </p>
+                <p>
+                  {money(single.price)} × Q = {money(single.fixed)} +{' '}
+                  {moneyUnit(single.varCost)} × Q
+                </p>
+                <p>
+                  {moneyUnit(cm)} × Q = {money(single.fixed)}
+                </p>
+                <p className="text-lg font-semibold text-stone-900">
+                  Q<sub>BE</sub> = {money(single.fixed)} / {moneyUnit(cm)} ={' '}
+                  {fmtNum(qbe)} patients
+                </p>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <p>
-                {fmtNum(compare.fixedMake)} + {num3(compare.varMake)}Q ={' '}
-                {fmtNum(compare.fixedBuy)} + {num3(compare.varBuy)}Q
-              </p>
-              <p>
-                {fmtNum(fDiff)} = {num3(vDiff)}Q
-              </p>
-              <p>
-                Q = {fmtNum(fDiff)} / {num3(vDiff)} = {fmtNum(qInd)} pages
-              </p>
-              <p className="font-semibold text-stone-900">
-                {Number.isInteger(qInd)
-                  ? `Costs are equal at Q = ${fmtNum(qInd)} — buy below it, make above it`
-                  : `Buy for Q ≤ ${fmtNum(Math.floor(qInd))} · Make for Q ≥ ${fmtNum(Math.floor(qInd) + 1)}`}
-              </p>
+          ) : (
+            <div className="space-y-3 text-base text-stone-800 tabular-nums">
+              <div className="space-y-2">
+                <p>
+                  <Dot color={COLOR_MAKE} />
+                  Cost to make = F + c × Q = {money(compare.fixedMake)} +{' '}
+                  {moneyUnit(compare.varMake)} × Q
+                </p>
+                <p>
+                  <Dot color={COLOR_BUY} />
+                  Cost to buy = F + c × Q = {money(compare.fixedBuy)} +{' '}
+                  {moneyUnit(compare.varBuy)} × Q
+                </p>
+              </div>
+              <div className="space-y-2 border-t border-stone-100 pt-3">
+                <p className="text-xs font-semibold text-stone-500 uppercase">
+                  Costs are equal where make = buy
+                </p>
+                <p>
+                  {money(compare.fixedMake)} + {moneyUnit(compare.varMake)} × Q ={' '}
+                  {money(compare.fixedBuy)} + {moneyUnit(compare.varBuy)} × Q
+                </p>
+                <p>
+                  {money(fDiff)} = {moneyUnit(vDiff)} × Q
+                </p>
+                <p className="text-lg font-semibold text-stone-900">
+                  Q = {money(fDiff)} / {moneyUnit(vDiff)} = {fmtNum(qInd)} pages
+                </p>
+                <p className="font-semibold text-stone-900">
+                  {Number.isInteger(qInd)
+                    ? `Costs are equal at Q = ${fmtNum(qInd)} — buy below it, make above it`
+                    : `Buy for Q ≤ ${fmtNum(Math.floor(qInd))} · Make for Q ≥ ${fmtNum(Math.floor(qInd) + 1)}`}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>

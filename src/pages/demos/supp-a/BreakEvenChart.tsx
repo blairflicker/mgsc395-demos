@@ -94,16 +94,38 @@ export const BreakEvenChart = memo(function BreakEvenChart({
   for (let v = xStep; v <= xMax; v += xStep) xTicks.push(v)
 
   const qc = Math.min(xMax, Math.max(0, q))
-  const vA = lines[0].at(qc)
-  const vB = lines[1].at(qc)
-  const gap = Math.abs(vA - vB)
 
   const vCross = lines[0].at(crossingQ)
   const crossVisible = showCrossing && crossingQ >= 0 && crossingQ <= xMax
   const crossX = Math.min(M.left + PLOT_W - 44, Math.max(M.left + 44, xPos(crossingQ)))
 
   const lineX = xPos(qc)
-  const labelEnd = lineX > M.left + PLOT_W - 90
+
+  // per-line call-out labels at the chosen Q: each line's value in a small box
+  // beside the dashed line, nudged apart vertically when the two lines nearly
+  // meet (near the crossing) so the numbers never sit on top of each other
+  const LBL_W = 78
+  const LBL_H = 20
+  const LBL_GAP = 10
+  const boxSide = lineX > M.left + PLOT_W - (LBL_W + 24) ? -1 : 1
+  const labels = lines.map((s) => {
+    const value = s.at(qc)
+    const dotY = yPos(value)
+    return { color: s.color, value, dotY, y: dotY }
+  })
+  {
+    const [hi, lo] =
+      labels[0].y <= labels[1].y ? [labels[0], labels[1]] : [labels[1], labels[0]]
+    const minSep = LBL_H + 6
+    if (lo.y - hi.y < minSep) {
+      const mid = (hi.y + lo.y) / 2
+      hi.y = mid - minSep / 2
+      lo.y = mid + minSep / 2
+    }
+    for (const l of labels) {
+      l.y = Math.min(M.top + PLOT_H - LBL_H / 2, Math.max(M.top + LBL_H / 2, l.y))
+    }
+  }
 
   // the label box that rides along with the grabbable line
   const BOX_W = 116
@@ -312,36 +334,54 @@ export const BreakEvenChart = memo(function BreakEvenChart({
               strokeDasharray="4 3"
             />
 
-            {/* open markers where the chosen Q crosses each line */}
-            {lines.map((s) => (
-              <g key={s.id}>
-                <title>{`${s.label} at Q = ${Math.round(qc).toLocaleString('en-US')}: ${money(s.at(qc))}`}</title>
-                <circle
-                  cx={lineX}
-                  cy={yPos(s.at(qc))}
-                  r="4"
-                  fill="white"
-                  stroke={s.color}
-                  strokeWidth="2"
-                />
-              </g>
-            ))}
-
-            {/* $ gap between the two lines at the chosen Q */}
-            <text
-              x={labelEnd ? lineX - 9 : lineX + 9}
-              y={Math.min(
-                M.top + PLOT_H - 6,
-                Math.max(M.top + 10, (yPos(vA) + yPos(vB)) / 2 + 3.5),
-              )}
-              textAnchor={labelEnd ? 'end' : 'start'}
-              fontSize="11"
-              fontWeight="600"
-              fill={INK_SOFT}
-              className="tabular-nums"
-            >
-              {money(gap)}
-            </text>
+            {/* each line's value at the chosen Q, in a call-out box beside the
+                dashed line, with an open marker on the line itself */}
+            {labels.map((l, i) => {
+              const boxX = boxSide === 1 ? lineX + LBL_GAP : lineX - LBL_GAP - LBL_W
+              const connectX = boxSide === 1 ? boxX : boxX + LBL_W
+              return (
+                <g key={lines[i].id}>
+                  <title>{`${lines[i].label} at Q = ${Math.round(qc).toLocaleString('en-US')}: ${money(l.value)}`}</title>
+                  <line
+                    x1={lineX}
+                    y1={l.dotY}
+                    x2={connectX}
+                    y2={l.y}
+                    stroke={l.color}
+                    strokeWidth="1"
+                  />
+                  <circle
+                    cx={lineX}
+                    cy={l.dotY}
+                    r="4"
+                    fill="white"
+                    stroke={l.color}
+                    strokeWidth="2"
+                  />
+                  <rect
+                    x={boxX}
+                    y={l.y - LBL_H / 2}
+                    width={LBL_W}
+                    height={LBL_H}
+                    rx="5"
+                    fill="white"
+                    stroke={l.color}
+                    strokeWidth="1.5"
+                  />
+                  <text
+                    x={boxX + LBL_W / 2}
+                    y={l.y + 4}
+                    textAnchor="middle"
+                    fontSize="11.5"
+                    fontWeight="600"
+                    fill="#292524"
+                    className="tabular-nums"
+                  >
+                    {money(l.value)}
+                  </text>
+                </g>
+              )
+            })}
 
             <rect
               x={boxX}
