@@ -50,15 +50,16 @@ const displayed = (r: ValueRow): { qty: number; unit: string } =>
     ? { qty: r.qty * r.dollarsPerUnit, unit: 'dollars' }
     : { qty: r.qty, unit: r.unit }
 
-/** the math shown inside a transformation chip, units carried through */
-const rowMath = (r: ValueRow): string => {
+/** what a transformation chip shows: the math problem (null when there is
+ *  none) and the bold final answer, units carried through */
+const rowParts = (r: ValueRow): { problem: string | null; answer: string } => {
   if (r.showDollars && r.dollarsPerUnit !== null) {
-    return (
-      `${fmtQty(r.qty)} ${r.unit} × ${fmtQty(r.dollarsPerUnit)} dollars/${singular(r.unit)}` +
-      ` = ${fmtDollars(r.qty * r.dollarsPerUnit)}`
-    )
+    return {
+      problem: `${fmtQty(r.qty)} ${r.unit} × ${fmtQty(r.dollarsPerUnit)} dollars/${singular(r.unit)}`,
+      answer: fmtDollars(r.qty * r.dollarsPerUnit),
+    }
   }
-  return `${fmtQty(r.qty)} ${r.unit}`
+  return { problem: null, answer: `${fmtQty(r.qty)} ${r.unit}` }
 }
 
 function TrashIcon() {
@@ -143,7 +144,8 @@ function ProcessNetwork() {
 function ValueChip({
   name,
   color,
-  math,
+  problem,
+  answer,
   showDollars,
   canDollars,
   onToggle,
@@ -153,7 +155,8 @@ function ValueChip({
 }: {
   name: string
   color: string
-  math: string
+  problem: string | null
+  answer: string
   showDollars: boolean
   canDollars: boolean
   onToggle: () => void
@@ -166,13 +169,18 @@ function ValueChip({
       <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
       <span className="min-w-0">
         <span className="block text-xs text-stone-500">{name}</span>
-        <span className="block text-sm font-medium text-stone-800 tabular-nums">{math}</span>
+        {problem && (
+          <span className="block text-sm text-stone-700 tabular-nums">{problem}</span>
+        )}
+        <span className="block text-sm font-semibold text-stone-900 tabular-nums">
+          {problem ? `= ${answer}` : answer}
+        </span>
       </span>
     </>
   )
   return (
     <div
-      className={`flex items-start gap-2 rounded-lg border bg-white px-2.5 py-1.5 ${
+      className={`flex min-h-18 items-start gap-2 rounded-lg border bg-white px-2.5 py-1.5 ${
         selected ? 'border-garnet-400 ring-2 ring-garnet-200' : 'border-stone-200'
       }`}
     >
@@ -542,7 +550,7 @@ export default function Ch1Productivity() {
                   key={r.id}
                   name={r.name || '(input)'}
                   color={KIND_COLOR[r.kind]}
-                  math={rowMath(r)}
+                  {...rowParts(r)}
                   showDollars={r.showDollars}
                   canDollars={r.dollarsPerUnit !== null}
                   onToggle={() => patchInput(r.id, { showDollars: !r.showDollars })}
@@ -569,7 +577,7 @@ export default function Ch1Productivity() {
               <ValueChip
                 name={output.name || '(output)'}
                 color={OUTPUT_COLOR}
-                math={rowMath(output)}
+                {...rowParts(output)}
                 showDollars={output.showDollars}
                 canDollars={output.dollarsPerUnit !== null}
                 onToggle={() => patchOutput({ showDollars: !output.showDollars })}
