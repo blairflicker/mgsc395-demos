@@ -1,7 +1,7 @@
 /**
- * Chapter 3 statistical process control — pure computation, no React.
+ * Chapter 4 statistical process control — pure computation, no React.
  *
- * Conventions match the Chapter 3 lecture exactly:
+ * Conventions match the Chapter 4 lecture exactly:
  * - Samples of n bottles are "boxed": only X̄_j (sample mean) and R_j
  *   (sample range) are ever seen again, never the individual bottles.
  * - X̿ = average of sample means, R̄ = average of sample ranges.
@@ -38,7 +38,7 @@ export const FACTORS: Record<number, { A2: number; D3: number; D4: number }> = {
   10: { A2: 0.308, D3: 0.223, D4: 1.777 },
 }
 
-/** The 10 samples of 5 bottles from the Chapter 3 slides. */
+/** The 10 samples of 5 bottles from the Chapter 4 slides. */
 export const CLASS_SAMPLES: number[][] = [
   [11.9, 11.92, 12.09, 11.91, 12.01],
   [12.03, 12.03, 11.92, 11.97, 12.07],

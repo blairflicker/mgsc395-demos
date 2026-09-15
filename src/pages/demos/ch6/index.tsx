@@ -1,59 +1,128 @@
 import { useEffect, useState } from 'react'
 import DemoHeader from '../../../components/DemoHeader'
 import {
-  BOTTLENECK_PLAN,
-  CAPACITY,
-  FULL_DEMAND_PLAN,
-  PRODUCTS,
-  PRODUCT_INFO,
-  TIME,
-  TRADITIONAL_PLAN,
-  WORKERS,
-  ZERO_PLAN,
-  financials,
-  maxFeasible,
-  workerTotal,
-  type Plan,
-  type ProductId,
-} from '../../../lib/diablo'
+  CLASS_CASE,
+  dependableHours,
+  hoursPerMachine,
+  lotCount,
+  machinesRequired,
+  processingHours,
+  productHours,
+  randomCase,
+  reservedHours,
+  setupHours,
+  totalHours,
+  utilizationAt,
+  type CapacityCase,
+} from '../../../lib/capacity'
 
-/** validated chart palette — one color per product */
-const PRODUCT_COLOR: Record<ProductId, string> = {
-  A: '#1d4ed8',
-  B: '#a52547',
-  C: '#0d9488',
-  D: '#b45309',
-}
+/** validated chart palette — one color per product, garnet kept for the cushion */
+const PRODUCT_COLORS = ['#1d4ed8', '#0d9488', '#b45309']
 
-const money = (v: number) =>
-  v < 0 ? `−$${Math.abs(v).toLocaleString('en-US')}` : `$${v.toLocaleString('en-US')}`
+/** diagonal stripes mark setup time, in the product's own color */
+const setupStyle = (color: string): React.CSSProperties => ({
+  background: `repeating-linear-gradient(135deg, ${color} 0px, ${color} 3px, ${color}55 3px, ${color}55 6px)`,
+})
 
-export default function Ch6TheoryOfConstraints() {
-  const [plan, setPlan] = useState<Plan>({ ...ZERO_PLAN })
-  const [showAnswers, setShowAnswers] = useState(false)
+const fmtH = (v: number) =>
+  v.toLocaleString('en-US', { maximumFractionDigits: 1 })
+const fmt1 = (v: number) => v.toFixed(1)
+
+const MAX_MACHINES = 15
+
+export default function Ch6CapacityPlanning() {
+  const [cap, setCap] = useState<CapacityCase>(CLASS_CASE)
+  const [isClass, setIsClass] = useState(true)
+  const [machines, setMachines] = useState(() =>
+    Math.ceil(machinesRequired(CLASS_CASE)),
+  )
+  const [showAnswers, setShowAnswers] = useState(true)
 
   useEffect(() => {
-    document.title = 'Theory of Constraints · MGSC 395'
+    document.title = 'Capacity Planning · MGSC 395'
     return () => {
       document.title = 'MGSC 395 · Interactive Demos'
     }
   }, [])
 
-  const setProduct = (p: ProductId, value: number) => {
+  const N = hoursPerMachine(cap)
+  const reserved = reservedHours(cap)
+  const dependable = dependableHours(cap)
+  const total = totalHours(cap)
+  const mReq = machinesRequired(cap)
+  const need = Math.ceil(mReq)
+  const util = utilizationAt(cap, machines)
+  const eff = 100 - util
+  const anySetups = cap.products.some((pl) => pl.s !== null)
+  /** both cards share this scale, so an hour is the same width everywhere */
+  const scaleMax = Math.max(total, N)
+
+  const setMachineCount = (value: number) => {
     if (!Number.isFinite(value)) return
-    setPlan((q) => ({
-      ...q,
-      [p]: Math.min(maxFeasible(q, p), Math.max(0, Math.round(value))),
-    }))
+    setMachines(Math.min(MAX_MACHINES, Math.max(1, Math.round(value))))
   }
 
-  const fin = financials(plan)
+  const backToClass = () => {
+    setCap(CLASS_CASE)
+    setIsClass(true)
+    setMachines(Math.ceil(machinesRequired(CLASS_CASE)))
+    setShowAnswers(true)
+  }
+
+  const makeRandom = () => {
+    const c = randomCase()
+    setCap(c)
+    setIsClass(false)
+    setMachines(1)
+    setShowAnswers(false)
+  }
+
+  // work segments, in product order: processing then setup
+  const segments = cap.products.flatMap((pl, i) => {
+    const color = PRODUCT_COLORS[i % PRODUCT_COLORS.length]
+    const out: { key: string; hours: number; style: React.CSSProperties; title: string }[] = [
+      {
+        key: `${pl.id}p`,
+        hours: processingHours(pl),
+        style: { backgroundColor: color },
+        title: `${pl.name} — processing: ${fmtH(processingHours(pl))} h`,
+      },
+    ]
+    if (pl.s !== null) {
+      out.push({
+        key: `${pl.id}s`,
+        hours: setupHours(pl),
+        style: setupStyle(color),
+        title: `${pl.name} — setup: ${fmtH(setupHours(pl))} h`,
+      })
+    }
+    return out
+  })
+
+  const verdict =
+    util > 100
+      ? {
+          label: 'Won’t fit',
+          cls: 'text-garnet-800',
+          detail: `Even at 100% utilization, ${machines} machine${machines === 1 ? '' : 's'} suppl${machines === 1 ? 'ies' : 'y'} only ${fmtH(machines * N)} of the ${fmtH(total)} hours needed — ${fmtH(total - machines * N)} hours of work don’t fit.`,
+        }
+      : machines < need
+        ? {
+            label: 'Fits, but eats the cushion',
+            cls: 'text-amber-700',
+            detail: `Utilization runs ${fmt1(util)}%, leaving an effective cushion of ${fmt1(eff)}% — under the ${cap.cushion}% set aside.`,
+          }
+        : {
+            label: 'Enough machines',
+            cls: 'text-teal-700',
+            detail: `Utilization is ${fmt1(util)}%, so the effective cushion is ${fmt1(eff)}% — the ${cap.cushion}% target holds.${machines > need ? ` ${need} machines would already do it.` : ''}`,
+          }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <DemoHeader label="Chapter 6 · Theory of Constraints" title="The Diablo Problem">
-        Diablo Electronics cannot meet all of its demand — pick a production
-        plan and watch where the workers&rsquo; minutes go.
+      <DemoHeader label="Chapter 6 · Capacity Planning" title="How Many Machines?">
+        One workstation, one big decision — see where the hours come from,
+        where they go, and what your purchase does to the cushion.
       </DemoHeader>
 
       {/* Practice toolbar */}
@@ -68,389 +137,347 @@ export default function Ch6TheoryOfConstraints() {
           {showAnswers ? 'Hide answers' : 'Show answers'}
         </button>
         <button
-          onClick={() => setPlan({ ...ZERO_PLAN })}
-          disabled={fin.units === 0}
+          onClick={makeRandom}
+          className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+        >
+          Create a random problem
+        </button>
+        <button
+          onClick={backToClass}
+          disabled={isClass}
           className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
         >
-          Reset plan
+          Back to class data
         </button>
       </div>
 
-      {/* The plan */}
+      {/* The problem — read-only givens */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-3 text-lg font-semibold text-stone-900">Your plan</h2>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {PRODUCTS.map((p) => {
-            const info = PRODUCT_INFO[p]
-            const cap = maxFeasible(plan, p)
-            return (
-              <div key={p} className="rounded-lg border border-stone-200 p-3">
-                <div className="flex items-center gap-1.5 text-sm font-semibold text-stone-800">
-                  <span
-                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: PRODUCT_COLOR[p] }}
-                  />
-                  Product {p}
-                </div>
-                <div className="mt-0.5 mb-2 text-xs text-stone-500 tabular-nums">
-                  ${info.margin} margin/unit · demand ≤ {info.demand}/wk
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setProduct(p, plan[p] - 10)}
-                    disabled={plan[p] === 0}
-                    aria-label={`Make 10 fewer of product ${p}`}
-                    className="h-8 w-8 rounded-lg border border-stone-300 bg-white text-base font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-                  >
-                    −
-                  </button>
-                  <input
-                    type="number"
-                    min={0}
-                    max={info.demand}
-                    step={10}
-                    value={plan[p]}
-                    onChange={(e) => setProduct(p, Number(e.target.value))}
-                    aria-label={`Units of product ${p} per week`}
-                    className="h-8 w-16 rounded-lg border border-stone-200 bg-white text-center text-sm tabular-nums focus:border-garnet-400 focus:outline-none"
-                  />
-                  <button
-                    onClick={() => setProduct(p, plan[p] + 10)}
-                    disabled={plan[p] >= cap}
-                    aria-label={`Make 10 more of product ${p}`}
-                    className="h-8 w-8 rounded-lg border border-stone-300 bg-white text-base font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-                  >
-                    +
-                  </button>
-                  <span className="ml-1 text-xs text-stone-500">units</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* the P&L, exactly as the slides compute it */}
-        <div className="mt-4 flex flex-wrap items-end gap-x-3 gap-y-2 border-t border-stone-100 pt-3 tabular-nums">
-          {(
-            [
-              ['Revenue', fin.revenue, ''],
-              ['Materials', -fin.materials, '−'],
-              ['Labor', -fin.labor, '−'],
-              ['Overhead', -fin.overhead, '−'],
-            ] as const
-          ).map(([label, value, op]) => (
-            <span key={label} className="flex items-end gap-3">
-              {op && <span className="pb-0.5 text-lg text-stone-400">{op}</span>}
-              <span>
-                <span className="block text-xs font-semibold text-stone-500 uppercase">
-                  {label}
+        <h2 className="mb-3 text-lg font-semibold text-stone-900">The problem</h2>
+        <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
+          <table className="text-sm tabular-nums">
+            <thead>
+              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                <th className="py-1.5 pr-5 font-semibold">Product</th>
+                <th className="py-1.5 pr-5 text-right font-semibold">
+                  Demand (D)
+                </th>
+                <th className="py-1.5 pr-5 text-right font-semibold">
+                  Hours/unit (p)
+                </th>
+                <th className="py-1.5 pr-5 text-right font-semibold">
+                  Lot size (Q)
+                </th>
+                <th className="py-1.5 text-right font-semibold">
+                  Setup hours (s)
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {cap.products.map((pl, i) => (
+                <tr key={pl.id} className="border-b border-stone-100 last:border-0">
+                  <td className="py-1 pr-5 text-stone-700">
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-2 w-2 shrink-0 rounded-full"
+                        style={{
+                          backgroundColor: PRODUCT_COLORS[i % PRODUCT_COLORS.length],
+                        }}
+                      />
+                      {pl.name}
+                    </span>
+                  </td>
+                  <td className="py-1 pr-5 text-right text-stone-700">
+                    {pl.D.toLocaleString('en-US')}
+                  </td>
+                  <td className="py-1 pr-5 text-right text-stone-700">
+                    {pl.p.toFixed(2)}
+                  </td>
+                  <td className="py-1 pr-5 text-right text-stone-700">
+                    {pl.Q !== null ? pl.Q : '—'}
+                  </td>
+                  <td className="py-1 text-right text-stone-700">
+                    {pl.s !== null ? pl.s.toFixed(2) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-3 tabular-nums">
+            {(
+              [
+                ['Operating', 'days', `${cap.days}/yr`],
+                ['', 'Shifts', `${cap.shifts} × ${cap.shiftHours} h/day`],
+                ['Hours per', 'machine (N)', `${fmtH(N)} h/yr`],
+                ['Target', 'cushion (C)', `${cap.cushion}%`],
+              ] as const
+            ).map(([top, bottom, value]) => (
+              <span key={bottom}>
+                <span className="flex h-8 flex-col justify-end text-xs leading-4 font-semibold text-stone-500 uppercase">
+                  {top !== '' && <span>{top}</span>}
+                  <span>{bottom}</span>
                 </span>
-                <span className="text-lg text-stone-700">
-                  {money(Math.abs(value))}
-                </span>
-              </span>
-            </span>
-          ))}
-          <span className="pb-0.5 text-lg text-stone-400">=</span>
-          <span>
-            <span className="block text-xs font-semibold text-stone-500 uppercase">
-              Profit
-            </span>
-            <span
-              className={`text-lg font-bold ${fin.profit < 0 ? 'text-red-700' : 'text-stone-900'}`}
-            >
-              {money(fin.profit)}
-            </span>
-          </span>
-          <span className="ml-auto pb-0.5 text-sm text-stone-500">
-            {fin.units.toLocaleString('en-US')} units/wk
-          </span>
-        </div>
-      </div>
-
-      {/* Worker time */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-stone-900">
-            The workers&rsquo; week
-          </h2>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
-            {PRODUCTS.map((p) => (
-              <span key={p} className="flex items-center gap-1.5">
-                <span
-                  className="inline-block h-2 w-2 rounded-full"
-                  style={{ backgroundColor: PRODUCT_COLOR[p] }}
-                />
-                Product {p}
+                <span className="text-lg text-stone-700">{value}</span>
               </span>
             ))}
           </div>
         </div>
-        <div className="space-y-2.5">
-          {WORKERS.map((w) => {
-            const total = workerTotal(plan, w)
-            const left = CAPACITY - total
-            return (
-              <div
-                key={w}
-                className="grid grid-cols-[4.5rem_1fr_11rem] items-center gap-3"
-              >
-                <span className="text-sm font-medium text-stone-800">{w}</span>
-                <div className="flex h-4 overflow-hidden rounded bg-stone-100">
-                  {PRODUCTS.map((p) => {
-                    const min = TIME[w][p] * plan[p]
-                    if (min === 0) return null
-                    return (
-                      <div
-                        key={p}
-                        title={`${w} — Product ${p}: ${min.toLocaleString('en-US')} min`}
-                        style={{
-                          width: `${(min / CAPACITY) * 100}%`,
-                          backgroundColor: PRODUCT_COLOR[p],
-                        }}
-                      />
-                    )
-                  })}
-                </div>
-                <span className="text-right text-xs text-stone-500 tabular-nums">
-                  {total.toLocaleString('en-US')} / {CAPACITY.toLocaleString('en-US')} min ·{' '}
-                  <span className={left === 0 ? 'font-bold text-garnet-800' : ''}>
-                    {left.toLocaleString('en-US')} left
-                  </span>
-                </span>
-              </div>
-            )
-          })}
+      </div>
+
+      {/* The work — where machine time is needed */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold text-stone-900">
+            The work to be done
+          </h2>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+            {cap.products.map((pl, i) => (
+              <span key={pl.id} className="flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{
+                    backgroundColor: PRODUCT_COLORS[i % PRODUCT_COLORS.length],
+                  }}
+                />
+                {pl.name}
+              </span>
+            ))}
+            {anySetups && (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2.5 w-4 rounded-sm"
+                  style={setupStyle('#78716c')}
+                />
+                setup time
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-[5.5rem_1fr_13rem] items-center gap-3">
+          <span className="text-sm font-semibold text-stone-900">Total</span>
+          <div>
+            <div
+              className="flex h-5 overflow-hidden rounded"
+              style={{ width: `${(total / scaleMax) * 100}%` }}
+            >
+              {segments.map((seg) => (
+                <div
+                  key={seg.key}
+                  title={seg.title}
+                  style={{ width: `${(seg.hours / total) * 100}%`, ...seg.style }}
+                />
+              ))}
+            </div>
+          </div>
+          <span className="text-right text-xs font-semibold text-stone-700 tabular-nums">
+            {fmtH(total)} h needed
+          </span>
         </div>
       </div>
 
-      {/* The answer */}
-      {showAnswers && (
-        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-          <h2 className="mb-3 text-lg font-semibold text-stone-900">The answer</h2>
-          <div className="grid gap-5 md:grid-cols-2">
-            <div>
-              <h3 className="mb-1.5 text-sm font-semibold text-stone-800">
-                Where is the bottleneck?
-              </h3>
-              <table className="w-full max-w-xs text-sm">
-                <thead>
-                  <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                    <th className="py-1.5 pr-3 font-semibold">Worker</th>
-                    <th className="py-1.5 text-right font-semibold">
-                      Load at full demand
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="tabular-nums">
-                  {WORKERS.map((w) => {
-                    const load = workerTotal(FULL_DEMAND_PLAN, w)
-                    const over = load > CAPACITY
-                    return (
-                      <tr key={w} className="border-b border-stone-100 last:border-0">
-                        <td
-                          className={`py-1 pr-3 ${over ? 'font-bold text-garnet-800' : 'text-stone-700'}`}
-                        >
-                          {w}
-                        </td>
-                        <td
-                          className={`py-1 text-right ${over ? 'font-bold text-garnet-800' : 'text-stone-700'}`}
-                        >
-                          {load.toLocaleString('en-US')} min
-                          {over && ` > ${CAPACITY.toLocaleString('en-US')}`}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div>
-              <h3 className="mb-1.5 text-sm font-semibold text-stone-800">
-                Margin per minute of Xavier&rsquo;s time
-              </h3>
-              <table className="w-full max-w-sm text-sm">
-                <thead>
-                  <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                    <th className="py-1.5 pr-3 font-semibold">Product</th>
-                    <th className="py-1.5 pr-3 text-right font-semibold">Margin</th>
-                    <th className="py-1.5 pr-3 text-right font-semibold">
-                      Min at Xavier
-                    </th>
-                    <th className="py-1.5 text-right font-semibold">$ / min</th>
-                  </tr>
-                </thead>
-                <tbody className="tabular-nums">
-                  {PRODUCTS.map((p) => {
-                    const t = TIME.Xavier[p]
-                    return (
-                      <tr key={p} className="border-b border-stone-100 last:border-0">
-                        <td className="py-1 pr-3 text-stone-700">
-                          <span className="flex items-center gap-1.5">
-                            <span
-                              className="inline-block h-2 w-2 rounded-full"
-                              style={{ backgroundColor: PRODUCT_COLOR[p] }}
-                            />
-                            {p}
-                          </span>
-                        </td>
-                        <td className="py-1 pr-3 text-right text-stone-700">
-                          ${PRODUCT_INFO[p].margin}
-                        </td>
-                        <td className="py-1 pr-3 text-right text-stone-700">{t}</td>
-                        <td className="py-1 text-right text-stone-700">
-                          {t > 0
-                            ? `$${(PRODUCT_INFO[p].margin / t).toFixed(2)}`
-                            : 'free — make it first'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {(
-              [
-                {
-                  key: 'traditional',
-                  name: 'Traditional method',
-                  rank: 'rank by margin per unit: B → A → C → D',
-                  plan: TRADITIONAL_PLAN,
-                },
-                {
-                  key: 'bottleneck',
-                  name: 'Bottleneck method',
-                  rank: 'rank by margin per Xavier-minute: D → C → A → B',
-                  plan: BOTTLENECK_PLAN,
-                },
-              ] as const
-            ).map((m) => {
-              const f = financials(m.plan)
-              const isBest = m.key === 'bottleneck'
-              return (
+      {/* The machines — where machine time comes from */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-stone-900">
+            How many machines should we buy?
+          </h2>
+          <span className="flex items-center gap-1.5">
+            <button
+              onClick={() => setMachineCount(machines - 1)}
+              disabled={machines <= 1}
+              aria-label="Buy one fewer machine"
+              className="h-8 w-8 rounded-lg border border-stone-300 bg-white text-base font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+            >
+              −
+            </button>
+            <input
+              type="number"
+              min={1}
+              max={MAX_MACHINES}
+              value={machines}
+              onChange={(e) => setMachineCount(Number(e.target.value))}
+              aria-label="Number of machines to buy"
+              className="h-8 w-16 rounded-lg border border-stone-200 bg-white text-center text-sm tabular-nums focus:border-garnet-400 focus:outline-none"
+            />
+            <button
+              onClick={() => setMachineCount(machines + 1)}
+              disabled={machines >= MAX_MACHINES}
+              aria-label="Buy one more machine"
+              className="h-8 w-8 rounded-lg border border-stone-300 bg-white text-base font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+            >
+              +
+            </button>
+            <span className="ml-1 text-sm text-stone-600">machines</span>
+          </span>
+        </div>
+        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+          {cap.products.map((pl, i) => (
+            <span key={pl.id} className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{
+                  backgroundColor: PRODUCT_COLORS[i % PRODUCT_COLORS.length],
+                }}
+              />
+              {pl.name}
+            </span>
+          ))}
+          {anySetups && (
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2.5 w-4 rounded-sm"
+                style={setupStyle('#78716c')}
+              />
+              setup time
+            </span>
+          )}
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-garnet-300 bg-garnet-100/70" />
+            cushion set aside ({cap.cushion}%)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-4 rounded-sm border border-stone-200 bg-stone-100" />
+            hours you can count on
+          </span>
+        </div>
+        <div className="space-y-2.5">
+          {Array.from({ length: machines }, (_, m) => (
+            <div
+              key={m}
+              className="grid grid-cols-[5.5rem_1fr_13rem] items-center gap-3"
+            >
+              <span className="text-sm font-medium text-stone-800">
+                Machine {m + 1}
+              </span>
+              <div>
                 <div
-                  key={m.key}
-                  className={`rounded-lg border p-3 ${isBest ? 'border-garnet-300 bg-garnet-50/40' : 'border-stone-200'}`}
+                  className="relative h-5 overflow-hidden rounded bg-stone-100"
+                  style={{ width: `${(N / scaleMax) * 100}%` }}
                 >
-                  <div className="text-sm font-semibold text-stone-900">{m.name}</div>
-                  <div className="mb-2 text-xs text-stone-500">{m.rank}</div>
-                  <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-stone-700 tabular-nums">
-                    {PRODUCTS.map((p) => (
-                      <span key={p}>
-                        {p}: <span className="font-medium">{m.plan[p]}</span>
-                      </span>
+                  <div
+                    className="absolute inset-y-0 right-0 bg-garnet-100/70"
+                    style={{ width: `${cap.cushion}%` }}
+                  />
+                  <div
+                    className="absolute inset-y-0 left-0 flex"
+                    style={{ width: `${Math.min(100, util)}%` }}
+                  >
+                    {segments.map((seg) => (
+                      <div
+                        key={seg.key}
+                        title={`${seg.title} total — ${fmtH(seg.hours / machines)} h on this machine`}
+                        style={{ width: `${(seg.hours / total) * 100}%`, ...seg.style }}
+                      />
                     ))}
                   </div>
-                  <div className="mb-2 text-sm text-stone-700 tabular-nums">
-                    {f.units} units ·{' '}
-                    <span className="font-bold text-stone-900">
-                      {money(f.profit)} profit
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setPlan({ ...m.plan })}
-                    className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
-                  >
-                    Load this plan
-                  </button>
+                  <div
+                    className="absolute inset-y-0 w-0 border-l-2 border-dashed border-garnet-400"
+                    style={{ left: `${100 - cap.cushion}%` }}
+                  />
                 </div>
-              )
-            })}
+              </div>
+              <span className="text-right text-xs text-stone-500 tabular-nums">
+                {fmtH(total / machines)} / {fmtH(N)} h
+              </span>
+            </div>
+          ))}
+        </div>
+        {showAnswers && (
+          <div className="mt-4 border-t border-stone-100 pt-3">
+            <span className={`text-sm font-bold ${verdict.cls}`}>
+              {verdict.label}
+            </span>
+            <span className="ml-2 text-sm text-stone-600">{verdict.detail}</span>
+          </div>
+        )}
+      </div>
+
+      {/* The calculations */}
+      {showAnswers && (
+        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+          <h2 className="mb-3 text-lg font-semibold text-stone-900">
+            The calculations
+          </h2>
+          <div className="space-y-4 text-sm text-stone-700 tabular-nums">
+            <div className="overflow-x-auto">
+              <table className="min-w-96 text-sm">
+                <thead>
+                  <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                    <th className="py-1.5 pr-6 font-semibold">Item</th>
+                    {cap.products.map((pl) => (
+                      <th key={pl.id} className="py-1.5 pr-6 text-right font-semibold">
+                        {pl.name}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-stone-100">
+                    <td className="py-1 pr-6 text-stone-700">Processing time</td>
+                    {cap.products.map((pl) => (
+                      <td key={pl.id} className="py-1 pr-6 text-right text-stone-700">
+                        {pl.D.toLocaleString('en-US')} × {pl.p.toFixed(2)} ={' '}
+                        {fmtH(processingHours(pl))} h
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-stone-100">
+                    <td className="py-1 pr-6 text-stone-700">Number of lots</td>
+                    {cap.products.map((pl) => (
+                      <td key={pl.id} className="py-1 pr-6 text-right text-stone-700">
+                        {pl.Q !== null
+                          ? `${pl.D.toLocaleString('en-US')} / ${pl.Q} = ${fmtH(lotCount(pl))}`
+                          : '—'}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-stone-100">
+                    <td className="py-1 pr-6 text-stone-700">Setup time</td>
+                    {cap.products.map((pl) => (
+                      <td key={pl.id} className="py-1 pr-6 text-right text-stone-700">
+                        {pl.s !== null
+                          ? `${fmtH(lotCount(pl))} × ${pl.s.toFixed(2)} = ${fmtH(setupHours(pl))} h`
+                          : '—'}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="font-semibold text-stone-900">
+                    <td className="py-1 pr-6">Total time</td>
+                    {cap.products.map((pl) => (
+                      <td key={pl.id} className="py-1 pr-6 text-right">
+                        {fmtH(productHours(pl))} h
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="space-y-1.5">
+              <p>
+                N = {cap.days} days ×{' '}
+                {cap.shifts > 1 ? `${cap.shifts} shifts × ` : ''}
+                {cap.shiftHours} h = {fmtH(N)} h per machine
+              </p>
+              <p>
+                Reserved cushion = {fmtH(N)} × {cap.cushion}% = {fmtH(reserved)} h
+              </p>
+              <p>
+                Hours you can count on = {fmtH(N)} − {fmtH(reserved)} ={' '}
+                {fmtH(dependable)} h
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <p>
+                M = ({cap.products.map((pl) => fmtH(productHours(pl))).join(' + ')})
+                / {fmtH(dependable)} = {mReq.toFixed(2)} machines
+              </p>
+              <p className="font-semibold text-stone-900">
+                Round up → buy {need} machines
+              </p>
+            </div>
           </div>
         </div>
       )}
-
-      {/* Problem data */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-1 text-lg font-semibold text-stone-900">The data</h2>
-        <p className="mb-3 text-sm text-stone-600">
-          Every worker has 2,400 minutes a week — 8 hours a day, 5 days, no
-          overtime.
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full max-w-lg min-w-96 text-sm">
-            <thead>
-              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                <th className="py-1.5 pr-3 font-semibold" />
-                {PRODUCTS.map((p) => (
-                  <th key={p} className="py-1.5 pr-3 text-right font-semibold">
-                    <span className="flex items-center justify-end gap-1.5">
-                      <span
-                        className="inline-block h-2 w-2 rounded-full"
-                        style={{ backgroundColor: PRODUCT_COLOR[p] }}
-                      />
-                      {p}
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="tabular-nums">
-              <tr>
-                <td
-                  colSpan={5}
-                  className="pt-2 pb-1 text-xs font-semibold text-stone-400 uppercase"
-                >
-                  Minutes per unit
-                </td>
-              </tr>
-              {WORKERS.map((w) => (
-                <tr key={w} className="border-b border-stone-100">
-                  <td className="py-1 pr-3 text-stone-700">{w}</td>
-                  {PRODUCTS.map((p) => (
-                    <td key={p} className="py-1 pr-3 text-right text-stone-700">
-                      {TIME[w][p] > 0 ? TIME[w][p] : '—'}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              <tr>
-                <td
-                  colSpan={5}
-                  className="pt-3 pb-1 text-xs font-semibold text-stone-400 uppercase"
-                >
-                  Dollars per unit
-                </td>
-              </tr>
-              {(
-                [
-                  ['Price', (p: ProductId) => PRODUCT_INFO[p].price],
-                  ['Materials', (p: ProductId) => PRODUCT_INFO[p].materials],
-                  ['Margin', (p: ProductId) => PRODUCT_INFO[p].margin],
-                ] as const
-              ).map(([label, get]) => (
-                <tr key={label} className="border-b border-stone-100">
-                  <td className="py-1 pr-3 text-stone-700">{label}</td>
-                  {PRODUCTS.map((p) => (
-                    <td key={p} className="py-1 pr-3 text-right text-stone-700">
-                      ${get(p)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              <tr>
-                <td
-                  colSpan={5}
-                  className="pt-3 pb-1 text-xs font-semibold text-stone-400 uppercase"
-                >
-                  Units per week
-                </td>
-              </tr>
-              <tr>
-                <td className="py-1 pr-3 text-stone-700">Demand</td>
-                {PRODUCTS.map((p) => (
-                  <td key={p} className="py-1 pr-3 text-right text-stone-700">
-                    {PRODUCT_INFO[p].demand}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   )
 }

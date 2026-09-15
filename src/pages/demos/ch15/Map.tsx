@@ -76,7 +76,7 @@ function CgIcon() {
  * The coordinate-grid "map": customers drawn as circles whose AREA is
  * proportional to their load, the center of gravity marked with a garnet
  * crosshair, and a draggable pin for the student's proposed facility.
- * Dragging uses pointer events like ch7's Network; the pin snaps to 0.1.
+ * Dragging uses pointer events like ch8's Network; the pin snaps to 0.1.
  */
 /** distance lines — bold enough to read against the gridlines; the hover
  *  highlight color lives in index.css (.dist-group:hover .dist-line) */

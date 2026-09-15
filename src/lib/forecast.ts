@@ -1,7 +1,7 @@
 /**
- * Chapter 8 time-series forecasting — pure computation, no React.
+ * Chapter 9 time-series forecasting — pure computation, no React.
  *
- * Conventions match the Chapter 8 lecture exactly:
+ * Conventions match the Chapter 9 lecture exactly:
  * - Naive: f_t = d_(t−1).
  * - Moving average MA(n): f_t = (d_(t−1) + d_(t−2) + … + d_(t−n)) / n.
  * - Exponential smoothing ES(α): f_2 = d_1, f_t = α·d_(t−1) + (1−α)·f_(t−1);
@@ -18,7 +18,7 @@
  * one period past the data, which is the next-period forecast.
  */
 
-/** The demand series from the Chapter 8 slides. */
+/** The demand series from the Chapter 9 slides. */
 export const CLASS_DEMAND: number[] = [
   120, 150, 240, 540, 210, 380, 120, 870, 120, 1100, 500, 950,
 ]

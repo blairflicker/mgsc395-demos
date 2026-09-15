@@ -1,7 +1,7 @@
 /**
- * Chapter 2 process analysis — Pareto charts. Pure computation, no React.
+ * Chapter 3 process analysis — Pareto charts. Pure computation, no React.
  *
- * Conventions match the Chapter 2 lecture exactly:
+ * Conventions match the Chapter 3 lecture exactly:
  * - Categories are tallied in the order the survey collected them; the
  *   Pareto view re-sorts them by count, largest first.
  * - percent = count / total; the cumulative percent runs down the sorted
@@ -28,7 +28,7 @@ export interface ParetoScenario {
   categories: Category[]
 }
 
-/** The restaurant complaint survey from the Chapter 2 slides. */
+/** The restaurant complaint survey from the Chapter 3 slides. */
 export const CLASS_CATEGORIES: Category[] = [
   { id: 'discourteous', name: 'Discourteous service', count: 12 },
   { id: 'slow', name: 'Slow service', count: 42 },

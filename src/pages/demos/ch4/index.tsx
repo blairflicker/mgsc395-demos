@@ -1,148 +1,253 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import DemoHeader from '../../../components/DemoHeader'
 import {
-  CLASS_SCENARIO,
-  bottleneck,
-  capacityPerDay,
-  dailyAvailSec,
-  dailyDemand,
-  leadSegmentsDays,
-  perUnitSec,
-  randomScenario,
-  taktSec,
-  totalProcessingSec,
-  type Scenario,
-  type Step,
-} from '../../../lib/vsm'
+  CLASS_DGP,
+  CLASS_SAMPLES,
+  FACTORS,
+  MAX_N,
+  MIN_N,
+  limits,
+  makeShelf,
+  makeSubgroup,
+  randomDgp,
+  verdict,
+  type Dgp,
+  type Subgroup,
+  type VerdictStatus,
+} from '../../../lib/spc'
+import { ControlCharts } from './Charts'
 
-/** validated chart palette — blue for working time, amber for waiting */
-const BLUE = '#1d4ed8'
-const AMBER = '#b45309'
+const classSubgroups = (): Subgroup[] =>
+  CLASS_SAMPLES.map((values, i) => makeSubgroup(`c${i + 1}`, values))
 
-/** diagonal stripes mark the setup slice, in the work color */
-const setupStyle = (color: string): React.CSSProperties => ({
-  background: `repeating-linear-gradient(135deg, ${color} 0px, ${color} 3px, ${color}55 3px, ${color}55 6px)`,
-})
+/** seconds for a bottle to cross the belt (1,400 px of travel) */
+const BELT_DUR = 45
+/** seconds between bottles appearing on the right */
+const SPAWN_S = 1.8
+/** bottles pre-placed along the belt on a fresh line */
+const INITIAL_BOTTLES = 24
 
-const fmt = (v: number) =>
-  v.toLocaleString('en-US', { maximumFractionDigits: 1 })
-const fmt1 = (v: number) => v.toFixed(1)
-const fmtInt = (v: number) => v.toLocaleString('en-US')
-const round1 = (v: number) => Math.round(v * 10) / 10
+interface LineBottle {
+  id: number
+  value: number
+  /** negative delays pre-place a bottle partway down the belt */
+  delay: number
+}
 
-/** amber VSM inventory triangle with its quantity */
-function Buffer({
-  value,
-  sub,
+let bottleSeq = 1
+
+const freshLine = (dgp: Dgp, t: number): LineBottle[] =>
+  makeShelf(dgp, t, INITIAL_BOTTLES).map((value, i) => ({
+    id: bottleSeq++,
+    value,
+    delay: -(i * SPAWN_S),
+  }))
+
+function BottleGlyph({
+  value = 0,
+  revealed = false,
+  className = 'h-14 w-10',
 }: {
-  value: string
-  sub: string
+  value?: number
+  revealed?: boolean
+  className?: string
 }) {
+  const frac = Math.min(0.97, Math.max(0.06, (value - 11.3) / 1.4))
+  const bodyTop = 20
+  const bodyH = 38
+  const fillH = frac * bodyH
   return (
-    <span className="flex flex-col items-center px-1 text-center">
-      <span aria-hidden className="text-xl leading-none" style={{ color: AMBER }}>
-        ▲
-      </span>
-      <span className="text-xs font-semibold text-stone-800 tabular-nums">
-        {value}
-      </span>
-      <span className="text-[10px] text-stone-500">{sub}</span>
-    </span>
+    <svg viewBox="0 0 44 64" className={className} aria-hidden>
+      <rect x="17" y="2" width="10" height="5" rx="1.5" fill="#57534e" />
+      <path
+        d="M18,7 L26,7 L26,12 L31,18 L31,58 Q31,61 28,61 L16,61 Q13,61 13,58 L13,18 L18,12 Z"
+        fill="#fafaf9"
+        stroke="#a8a29e"
+        strokeWidth="1.4"
+      />
+      {revealed ? (
+        <rect
+          x="14.5"
+          y={bodyTop + (bodyH - fillH)}
+          width="15"
+          height={fillH}
+          fill="#0d9488"
+          fillOpacity="0.55"
+        />
+      ) : (
+        <text x="22" y="45" textAnchor="middle" fontSize="15" fontWeight="600" fill="#a8a29e">
+          ?
+        </text>
+      )}
+    </svg>
   )
 }
 
-function StepBox({ step }: { step: Step }) {
-  return (
-    <span className="flex flex-col rounded-lg border border-stone-300 bg-stone-50 px-3 py-1.5 text-center">
-      <span className="text-sm font-semibold text-stone-900">{step.name}</span>
-      <span className="text-xs text-stone-600 tabular-nums">
-        {step.cycleSec} s/pc
-      </span>
-      <span className="text-xs text-stone-500 tabular-nums">
-        {step.setupMin > 0 ? `${step.setupMin} min setup` : 'no setup'}
-      </span>
-    </span>
-  )
+/** "a + b + … " with every value spelled out — the point is the arithmetic */
+const sumText = (values: number[]): string =>
+  values.map((v) => v.toFixed(2)).join(' + ')
+
+const VERDICT_STYLE: Record<VerdictStatus, { label: string; cls: string }> = {
+  insufficient: { label: 'Too early to call', cls: 'text-stone-500' },
+  'in-control': { label: 'In control', cls: 'text-teal-700' },
+  questionable: { label: 'Questionable', cls: 'text-amber-700' },
+  out: { label: 'Out of control', cls: 'text-garnet-800' },
 }
 
-export default function Ch4LeanSystems() {
-  const [sc, setSc] = useState<Scenario>(CLASS_SCENARIO)
-  const [isClass, setIsClass] = useState(true)
+export default function Ch4QualityPerformance() {
+  const [n, setN] = useState(5)
+  const [dgp, setDgp] = useState<Dgp>({ ...CLASS_DGP })
+  const [subgroups, setSubgroups] = useState<Subgroup[]>(classSubgroups)
+  const [line, setLine] = useState<LineBottle[]>(() => freshLine(CLASS_DGP, 11))
+  const [tray, setTray] = useState<number[]>([])
   const [showAnswers, setShowAnswers] = useState(true)
+  /** the box whose contents are popped open, and where the popover sits */
+  const [popover, setPopover] = useState<{ index: number; left: number; width: number } | null>(null)
+  const boxRowRef = useRef<HTMLDivElement>(null)
+  const idRef = useRef(1)
 
   useEffect(() => {
-    document.title = 'Lean Systems · MGSC 395'
+    document.title = 'Quality & Performance · MGSC 395'
     return () => {
       document.title = 'MGSC 395 · Interactive Demos'
     }
   }, [])
 
-  const daily = dailyDemand(sc)
-  const avail = dailyAvailSec(sc)
-  const takt = taktSec(sc)
-  const bn = bottleneck(sc)
-  const bnPer = perUnitSec(bn, sc.batchSize)
-  const cap = capacityPerDay(sc)
-  const segments = leadSegmentsDays(sc)
-  const waitTotal = segments.reduce((a, b) => a + round1(b), 0)
-  const workTotal = totalProcessingSec(sc)
-  const anySetups = sc.steps.some((s) => s.setupMin > 0)
-  /** all beat bars and the takt line share this scale, from zero */
-  const scaleMax =
-    Math.max(takt, ...sc.steps.map((s) => perUnitSec(s, sc.batchSize))) * 1.08
+  const t = subgroups.length + 1
+  const complete = tray.length === n
+  const lim = limits(subgroups, n)
+  const verd = verdict(subgroups, lim)
+  const f = FACTORS[n]
+
+  // new bottles keep appearing on the right of the belt
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const value = makeShelf(dgp, t, 1)[0]
+      setLine((l) => [...l.slice(-40), { id: bottleSeq++, value, delay: 0 }])
+    }, SPAWN_S * 1000)
+    return () => clearInterval(iv)
+  }, [dgp, t])
+
+  const bottleGone = (id: number) => {
+    setLine((l) => l.filter((b) => b.id !== id))
+  }
+
+  const pick = (id: number) => {
+    if (complete) return
+    const bottle = line.find((b) => b.id === id)
+    if (!bottle) return
+    setLine((l) => l.filter((b) => b.id !== id))
+    setTray((s) => (s.length < n ? [...s, bottle.value] : s))
+  }
+
+  const seal = () => {
+    if (!complete) return
+    setSubgroups((list) => [...list, makeSubgroup(`b${idRef.current++}`, tray)])
+    setTray([])
+    setPopover(null)
+  }
+
+  const autoSample = (count: number) => {
+    setSubgroups((list) => {
+      const next = [...list]
+      for (let k = 0; k < count; k++) {
+        next.push(makeSubgroup(`b${idRef.current++}`, makeShelf(dgp, next.length + 1, n)))
+      }
+      return next
+    })
+    setTray([])
+    setPopover(null)
+  }
+
+  const changeDgp = (patch: Partial<Dgp>) => {
+    setDgp({ ...dgp, ...patch, t0: t })
+  }
+
+  const changeN = (value: number) => {
+    if (!Number.isFinite(value)) return
+    const v = Math.min(MAX_N, Math.max(MIN_N, Math.round(value)))
+    const next = { ...dgp, t0: 1 }
+    setN(v)
+    setDgp(next)
+    setSubgroups([])
+    setLine(freshLine(next, 1))
+    setTray([])
+    setPopover(null)
+  }
+
+  const clearSamples = () => {
+    const next = { ...dgp, t0: 1 }
+    setDgp(next)
+    setSubgroups([])
+    setLine(freshLine(next, 1))
+    setTray([])
+    setPopover(null)
+  }
+
+  // ── practice toolbar ────────────────────────────────────
+  const isClassData =
+    n === 5 &&
+    subgroups.length === CLASS_SAMPLES.length &&
+    subgroups[0]?.id === 'c1' &&
+    dgp.meanPattern === CLASS_DGP.meanPattern &&
+    dgp.varPattern === CLASS_DGP.varPattern &&
+    dgp.sigma === CLASS_DGP.sigma &&
+    dgp.strength === CLASS_DGP.strength
 
   const backToClass = () => {
-    setSc(CLASS_SCENARIO)
-    setIsClass(true)
+    setN(5)
+    setDgp({ ...CLASS_DGP })
+    setSubgroups(classSubgroups())
+    setLine(freshLine(CLASS_DGP, 11))
+    setTray([])
+    setPopover(null)
     setShowAnswers(true)
   }
 
   const makeRandom = () => {
-    setSc(randomScenario())
-    setIsClass(false)
+    const d = randomDgp()
+    setDgp(d)
+    setSubgroups([])
+    setLine(freshLine(d, 1))
+    setTray([])
+    setPopover(null)
     setShowAnswers(false)
   }
 
-  // ladder segments, in flow order: wait, work, wait, work, …, wait
-  const ladder: {
-    key: string
-    kind: 'wait' | 'work'
-    label: string
-    hidden?: boolean
-  }[] = []
-  ladder.push({
-    key: 'raw',
-    kind: 'wait',
-    label: `${fmt(sc.rawMaterialDays)} days`,
-  })
-  sc.steps.forEach((s, i) => {
-    ladder.push({ key: `${s.id}w`, kind: 'work', label: `${s.cycleSec} s` })
-    ladder.push({
-      key: `${s.id}b`,
-      kind: 'wait',
-      label: `${fmt(round1(segments[i + 1]))} days`,
-      hidden: !showAnswers, // computed from WIP — practice material
-    })
-  })
+  useEffect(() => {
+    if (popover === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPopover(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [popover])
 
-  const verdict =
-    cap >= daily
-      ? {
-          label: 'Keeps up',
-          cls: 'text-teal-700',
-          detail: `${bn.name} needs ${fmt(bnPer)} s per piece against a ${fmt1(takt)} s beat — capacity ${fmt(cap)} a day covers demand of ${fmtInt(daily)}.`,
-        }
-      : {
-          label: 'Can’t keep up',
-          cls: 'text-garnet-800',
-          detail: `${bn.name} needs ${fmt(bnPer)} s per piece but the beat allows only ${fmt1(takt)} s — capacity ${fmt(cap)} a day falls short of demand of ${fmtInt(daily)}.`,
-        }
+  const clickBox = (i: number, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (popover?.index === i) {
+      setPopover(null)
+      return
+    }
+    const wrap = boxRowRef.current
+    if (!wrap) return
+    const w = wrap.getBoundingClientRect()
+    const b = e.currentTarget.getBoundingClientRect()
+    const width = Math.min(560, w.width)
+    const center = b.left - w.left + b.width / 2
+    const left = Math.max(0, Math.min(center - width / 2, w.width - width))
+    setPopover({ index: i, left, width })
+  }
+
+  const popped =
+    popover !== null && popover.index < subgroups.length
+      ? subgroups[popover.index]
+      : null
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <DemoHeader label="Chapter 4 · Lean Systems" title="Seconds of Work, Days of Waiting">
-        Walk one part down the line and see how little of its journey is
-        actual work — then check whether the slowest step can hold the beat.
+      <DemoHeader label="Chapter 4 · Quality & Performance" title="The Sampling Lab">
+        Pick bottles off the line, box the samples, and decide from the X̄
+        and R charts whether the process is in control.
       </DemoHeader>
 
       {/* Practice toolbar */}
@@ -164,260 +269,409 @@ export default function Ch4LeanSystems() {
         </button>
         <button
           onClick={backToClass}
-          disabled={isClass}
+          disabled={isClassData}
           className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
         >
           Back to class data
         </button>
+        <button
+          onClick={clearSamples}
+          disabled={subgroups.length === 0}
+          className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+        >
+          Clear samples
+        </button>
       </div>
 
-      {/* The line — read-only givens */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-3 text-lg font-semibold text-stone-900">The line</h2>
-        <div className="mb-4 flex flex-wrap items-end gap-x-6 gap-y-3 tabular-nums">
-          {(
-            [
-              ['Weekly', 'demand', `${fmtInt(sc.weeklyDemand)} pieces`],
-              ['Work', 'days', `${sc.daysPerWeek}/wk`],
-              ['', 'Shift', `${sc.shiftHours} h − ${fmt(sc.lunchHours)} h lunch`],
-              ['Available', 'time', `${fmtInt(avail)} s/day`],
-              ['Batch', 'size', `${sc.batchSize} pieces`],
-            ] as const
-          ).map(([top, bottom, value]) => (
-            <span key={bottom}>
-              <span className="flex h-8 flex-col justify-end text-xs leading-4 font-semibold text-stone-500 uppercase">
-                {top !== '' && <span>{top}</span>}
-                <span>{bottom}</span>
+      {/* The data-generating process — the answer under the hood */}
+      {showAnswers && (
+        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+          <h2 className="mb-3 text-lg font-semibold text-stone-900">
+            Under the hood
+          </h2>
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+            <div>
+              <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
+                Process mean
               </span>
-              <span className="text-lg text-stone-700">{value}</span>
-            </span>
-          ))}
-        </div>
-
-        {/* process chain: inventory triangles alternating with step boxes */}
-        <div className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-3">
-          <Buffer value={`${fmt(sc.rawMaterialDays)} days`} sub="raw material" />
-          {sc.steps.map((s, i) => (
-            <span key={s.id} className="flex items-center gap-x-2">
-              <span aria-hidden className="text-stone-400">→</span>
-              <StepBox step={s} />
-              <span aria-hidden className="text-stone-400">→</span>
-              {i < sc.steps.length - 1 ? (
-                <Buffer
-                  value={`${fmtInt(sc.steps[i + 1].wipBefore ?? 0)} pcs`}
-                  sub="waiting"
-                />
-              ) : (
-                <Buffer value={`${fmtInt(sc.wipAfterLast)} pcs`} sub="to ship" />
-              )}
-            </span>
-          ))}
-        </div>
-
-        {/* lead-time ladder: high rungs wait in days, low rungs work in seconds */}
-        <div className="overflow-x-auto">
-          <div className="flex min-w-[36rem] items-stretch gap-x-3">
-            <div className="flex grow">
-              {ladder.map((seg) =>
-                seg.kind === 'wait' ? (
-                  <div key={seg.key} className="min-w-14 flex-[1.4]">
-                    <div
-                      className="h-5 text-center text-xs font-semibold tabular-nums"
-                      style={{ color: AMBER }}
-                    >
-                      {seg.hidden ? (
-                        <span className="font-normal text-stone-400">? days</span>
-                      ) : (
-                        seg.label
-                      )}
-                    </div>
-                    <div className="h-8 border-t-2 border-stone-400" />
-                    <div className="h-5" />
-                  </div>
-                ) : (
-                  <div key={seg.key} className="min-w-10 flex-1">
-                    <div className="h-5" />
-                    <div className="h-8 border-x-2 border-b-2 border-stone-400" />
-                    <div
-                      className="h-5 pt-1 text-center text-xs font-semibold tabular-nums"
-                      style={{ color: BLUE }}
-                    >
-                      {seg.label}
-                    </div>
-                  </div>
-                ),
-              )}
+              <div className="flex overflow-hidden rounded-lg border border-stone-300 text-sm">
+                {(
+                  [
+                    ['stable', 'Stable'],
+                    ['up', 'Increasing'],
+                    ['down', 'Decreasing'],
+                    ['seasonal', 'Seasonal'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => changeDgp({ meanPattern: value })}
+                    aria-pressed={dgp.meanPattern === value}
+                    className={
+                      dgp.meanPattern === value
+                        ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
+                        : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex shrink-0 flex-col justify-between py-0.5 text-right text-sm font-semibold tabular-nums">
-              <span style={{ color: AMBER }}>
-                {showAnswers ? (
-                  `${fmt(waitTotal)} days waiting`
-                ) : (
-                  <span className="font-normal text-stone-400">? days waiting</span>
+            <div>
+              <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
+                Variability
+              </span>
+              <div className="flex overflow-hidden rounded-lg border border-stone-300 text-sm">
+                {(
+                  [
+                    ['stable', 'Stable'],
+                    ['increasing', 'Increasing'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => changeDgp({ varPattern: value })}
+                    aria-pressed={dgp.varPattern === value}
+                    className={
+                      dgp.varPattern === value
+                        ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
+                        : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
+                Bottle-to-bottle <span className="normal-case">σ</span>
+              </span>
+              <span className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={0.02}
+                  max={0.3}
+                  step={0.01}
+                  value={dgp.sigma}
+                  onChange={(e) => changeDgp({ sigma: Number(e.target.value) })}
+                  className="w-28 accent-garnet-700"
+                />
+                <span className="w-16 text-sm text-stone-600 tabular-nums">
+                  {dgp.sigma.toFixed(2)} oz
+                </span>
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
+                Strength
+              </span>
+              <span className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={0.01}
+                  max={0.1}
+                  step={0.01}
+                  value={dgp.strength}
+                  disabled={dgp.meanPattern === 'stable' && dgp.varPattern === 'stable'}
+                  onChange={(e) => changeDgp({ strength: Number(e.target.value) })}
+                  className="w-28 accent-garnet-700 disabled:opacity-40"
+                />
+                <span
+                  className={`w-24 text-sm tabular-nums ${
+                    dgp.meanPattern === 'stable' && dgp.varPattern === 'stable'
+                      ? 'text-stone-400'
+                      : 'text-stone-600'
+                  }`}
+                >
+                  {dgp.strength.toFixed(2)} / sample
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* The assembly line */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-stone-900">
+              The assembly line — sample {t}
+            </h2>
+            <p className="text-sm text-stone-600">
+              {complete
+                ? 'Sample complete — seal the box to measure it.'
+                : `Pick ${n} bottles off the line as they go by.`}
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-stone-600">
+            Bottles per box (n)
+            <input
+              type="number"
+              min={MIN_N}
+              max={MAX_N}
+              value={n}
+              onChange={(e) => changeN(Number(e.target.value))}
+              aria-label="Sample size n"
+              className="w-16 rounded border border-stone-300 bg-white px-2 py-1 text-sm tabular-nums focus:border-garnet-400 focus:outline-none"
+            />
+          </label>
+        </div>
+        <div className="relative h-24 overflow-hidden">
+          <div className="absolute inset-x-0 bottom-0 h-2 rounded bg-stone-200" />
+          {line.map((b) => (
+            <button
+              key={b.id}
+              onClick={() => pick(b.id)}
+              onAnimationEnd={() => bottleGone(b.id)}
+              disabled={complete}
+              aria-label="Take this bottle off the line"
+              className="ch4-belt-move absolute top-0 rounded px-2 py-3 transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-garnet-400 disabled:cursor-default"
+              style={{
+                right: -56,
+                animationDuration: `${BELT_DUR}s`,
+                animationDelay: `${b.delay}s`,
+              }}
+            >
+              <BottleGlyph />
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-stone-100 pt-3">
+          <span className="text-xs font-semibold text-stone-500 uppercase">
+            Current sample
+          </span>
+          <span className="flex items-start gap-1.5">
+            {Array.from({ length: n }, (_, i) => (
+              <span
+                key={i}
+                className={
+                  i < tray.length
+                    ? 'flex w-12 flex-col items-center'
+                    : 'flex h-16 w-12 flex-col items-center rounded-lg border border-dashed border-stone-300'
+                }
+              >
+                {i < tray.length && (
+                  <>
+                    <BottleGlyph
+                      value={tray[i]}
+                      revealed={complete}
+                      className="h-12 w-8"
+                    />
+                    <span className="block h-4 text-center text-[11px] text-stone-600 tabular-nums">
+                      {complete ? tray[i].toFixed(2) : ''}
+                    </span>
+                  </>
                 )}
               </span>
-              <span style={{ color: BLUE }}>{fmtInt(workTotal)} s working</span>
-            </div>
-          </div>
+            ))}
+          </span>
+          <button
+            onClick={seal}
+            disabled={!complete}
+            className="rounded-lg bg-garnet-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-garnet-700 disabled:opacity-40"
+          >
+            {complete ? 'Seal the box' : `Seal the box (${tray.length}/${n})`}
+          </button>
+          <button
+            onClick={() => autoSample(1)}
+            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+          >
+            Auto-sample
+          </button>
+          <button
+            onClick={() => autoSample(5)}
+            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+          >
+            Auto-sample ×5
+          </button>
         </div>
       </div>
 
-      {/* The beat — per-unit time at each step against takt */}
+      {/* The boxes — only X̄ and R survive */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-stone-900">The beat</h2>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
-            <span className="flex items-center gap-1.5">
-              <span
-                className="inline-block h-2.5 w-4 rounded-sm"
-                style={{ backgroundColor: BLUE }}
-              />
-              cycle time
-            </span>
-            {anySetups && (
-              <span className="flex items-center gap-1.5">
-                <span
-                  className="inline-block h-2.5 w-4 rounded-sm"
-                  style={setupStyle(BLUE)}
-                />
-                setup share per piece
-              </span>
-            )}
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-0 border-l-2 border-dashed border-stone-500" />
-              takt
-            </span>
-          </div>
-        </div>
-        <div className="space-y-2.5">
-          {/* takt label sits above the bars, at the line's position */}
-          <div className="grid grid-cols-[8.5rem_1fr_5rem] items-center gap-3">
-            <span />
-            <div className="relative h-4">
-              {showAnswers && (
-                <span
-                  className="absolute -translate-x-1/2 text-xs font-semibold whitespace-nowrap text-stone-600 tabular-nums"
-                  style={{ left: `${(takt / scaleMax) * 100}%` }}
+        <h2 className="mb-3 text-lg font-semibold text-stone-900">The boxes</h2>
+        {subgroups.length === 0 ? (
+          <p className="py-2 text-sm text-stone-500">
+            No boxes yet — seal your first sample above.
+          </p>
+        ) : (
+          <>
+            <div ref={boxRowRef} className="relative">
+              <div
+                className="flex gap-2 overflow-x-auto pb-1"
+                onScroll={() => setPopover(null)}
+              >
+                {subgroups.map((g, i) => (
+                  <button
+                    key={g.id}
+                    onClick={(e) => clickBox(i, e)}
+                    aria-pressed={popover?.index === i}
+                    aria-label={`Open box ${i + 1}`}
+                    className={
+                      popover?.index === i
+                        ? 'min-w-24 shrink-0 rounded-lg border border-garnet-400 bg-garnet-50/60 px-2.5 py-2 text-center ring-2 ring-garnet-200'
+                        : 'min-w-24 shrink-0 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-2 text-center hover:border-garnet-300'
+                    }
+                  >
+                    <div className="text-xs font-semibold text-stone-500">#{i + 1}</div>
+                    <div className="text-sm text-stone-800 tabular-nums">
+                      X̄ {g.mean.toFixed(2)}
+                    </div>
+                    <div className="text-sm text-stone-800 tabular-nums">
+                      R {g.range.toFixed(2)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {popover !== null && popped !== null && (
+                <div
+                  role="dialog"
+                  aria-label={`Inside box ${popover.index + 1}`}
+                  className="absolute z-20 space-y-1 rounded-xl border border-stone-300 bg-white p-4 text-sm text-stone-700 shadow-lg tabular-nums"
+                  style={{ top: 'calc(100% + 4px)', left: popover.left, width: popover.width }}
                 >
-                  takt = {fmt1(takt)} s
-                </span>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-stone-900">
+                      Box #{popover.index + 1}
+                    </span>
+                    <button
+                      onClick={() => setPopover(null)}
+                      aria-label="Close"
+                      className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        aria-hidden
+                      >
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="break-words">
+                    Observations: {popped.values.map((v) => v.toFixed(2)).join(', ')}
+                  </div>
+                  <div className="break-words">
+                    X̄ = ({popped.values.map((v) => v.toFixed(2)).join(' + ')}) /{' '}
+                    {popped.values.length} = {popped.mean.toFixed(2)}
+                  </div>
+                  <div>
+                    R = {Math.max(...popped.values).toFixed(2)} −{' '}
+                    {Math.min(...popped.values).toFixed(2)} = {popped.range.toFixed(2)}
+                  </div>
+                </div>
               )}
             </div>
-            <span />
-          </div>
-          {sc.steps.map((s) => {
-            const per = perUnitSec(s, sc.batchSize)
-            const isBn = showAnswers && s.id === bn.id
-            const setupShare = (s.setupMin * 60) / sc.batchSize
-            return (
-              <div
-                key={s.id}
-                className="grid grid-cols-[8.5rem_1fr_5rem] items-center gap-3"
-              >
-                <span
-                  className={`text-sm ${isBn ? 'font-semibold text-garnet-800' : 'font-medium text-stone-800'}`}
-                >
-                  {s.name}
-                </span>
-                <div className="relative h-6">
-                  <div
-                    className={`flex h-full overflow-hidden rounded ${isBn ? 'ring-2 ring-garnet-600' : ''}`}
-                    style={{ width: `${(per / scaleMax) * 100}%` }}
-                  >
-                    <div
-                      title={`${s.name} — cycle: ${s.cycleSec} s`}
-                      style={{
-                        width: `${(s.cycleSec / per) * 100}%`,
-                        backgroundColor: BLUE,
-                      }}
-                    />
-                    {s.setupMin > 0 && (
-                      <div
-                        title={`${s.name} — setup share: ${fmt(setupShare)} s per piece`}
-                        style={{
-                          width: `${(setupShare / per) * 100}%`,
-                          ...setupStyle(BLUE),
-                        }}
-                      />
-                    )}
-                  </div>
-                  <div
-                    className="absolute inset-y-0 w-0 border-l-2 border-dashed border-stone-500"
-                    style={{ left: `${(takt / scaleMax) * 100}%` }}
-                  />
-                </div>
-                <span className="text-right text-xs font-semibold text-stone-700 tabular-nums">
-                  {showAnswers ? `${fmt(per)} s/pc` : ''}
-                </span>
-              </div>
-            )
-          })}
+          </>
+        )}
+      </div>
+
+      {/* The charts */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold text-stone-900">
+            The control charts
+          </h2>
+          <span className="text-xs text-stone-500 tabular-nums">
+            n = {n} → A₂ = {f.A2} · D₃ = {f.D3} · D₄ = {f.D4}
+          </span>
         </div>
+        {lim === null ? (
+          <p className="py-4 text-center text-sm text-stone-500">
+            The charts appear once the first box is sealed.
+          </p>
+        ) : (
+          <ControlCharts subgroups={subgroups} lim={lim} highlight={showAnswers} />
+        )}
         {showAnswers && (
           <div className="mt-4 border-t border-stone-100 pt-3">
-            <span className={`text-sm font-bold ${verdict.cls}`}>
-              {verdict.label}
+            <span className={`text-sm font-bold ${VERDICT_STYLE[verd.status].cls}`}>
+              {VERDICT_STYLE[verd.status].label}
             </span>
-            <span className="ml-2 text-sm text-stone-600">{verdict.detail}</span>
+            <span className="ml-2 text-sm text-stone-600">{verd.detail}</span>
           </div>
         )}
       </div>
 
-      {/* The calculations */}
-      {showAnswers && (
+      {/* The hand calculations behind the charts */}
+      {showAnswers && lim !== null && (
         <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
           <h2 className="mb-3 text-lg font-semibold text-stone-900">
             The calculations
           </h2>
-          <div className="space-y-4 text-sm text-stone-700 tabular-nums">
-            <div className="space-y-1.5">
-              <p>
-                Daily demand = {fmtInt(sc.weeklyDemand)} / {sc.daysPerWeek} ={' '}
-                {fmtInt(daily)} pieces
-              </p>
-              <p>
-                Availability = ({sc.shiftHours} − {fmt(sc.lunchHours)}) × 3,600 ={' '}
-                {fmtInt(avail)} s per day
-              </p>
-              <p>
-                Takt = {fmtInt(avail)} / {fmtInt(daily)} ={' '}
-                {takt.toLocaleString('en-US', { maximumFractionDigits: 3 })} s
-                per piece
-              </p>
+          <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
+            <div>
+              <h3 className="mb-1.5 max-w-56 text-sm font-semibold text-stone-800">
+                Factors for Calculating Three Sigma Limits for the X̄-Chart and
+                R-Chart
+              </h3>
+              <table className="text-sm tabular-nums">
+              <thead>
+                <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                  <th className="py-1.5 pr-5 font-semibold">n</th>
+                  <th className="py-1.5 pr-5 text-right font-semibold">A₂</th>
+                  <th className="py-1.5 pr-5 text-right font-semibold">D₃</th>
+                  <th className="py-1.5 text-right font-semibold">D₄</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(FACTORS).map(([size, fac]) => (
+                  <tr
+                    key={size}
+                    className={
+                      Number(size) === n
+                        ? 'border-b border-stone-100 bg-garnet-50 font-semibold text-garnet-900'
+                        : 'border-b border-stone-100 text-stone-700 last:border-0'
+                    }
+                  >
+                    <td className="py-0.5 pr-5 pl-1">{size}</td>
+                    <td className="py-0.5 pr-5 text-right">{fac.A2.toFixed(3)}</td>
+                    <td className="py-0.5 pr-5 text-right">{fac.D3.toFixed(3)}</td>
+                    <td className="py-0.5 pr-1 text-right">{fac.D4.toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              </table>
             </div>
-            <div className="space-y-1.5">
-              {sc.steps.map((s) => (
-                <p key={s.id}>
-                  {s.name} ={' '}
-                  {s.setupMin > 0
-                    ? `${s.cycleSec} + (${s.setupMin} × 60) / ${sc.batchSize} = ${fmt(perUnitSec(s, sc.batchSize))} s`
-                    : `${s.cycleSec} s (no setup)`}
+            <div className="min-w-0 flex-1 basis-80 space-y-4 text-sm text-stone-700 tabular-nums">
+              <div className="space-y-1.5">
+                <p className="break-words">
+                  X̿ = ({sumText(subgroups.map((g) => g.mean))}) /{' '}
+                  {subgroups.length} = {lim.xbarbar.toFixed(2)}
                 </p>
-              ))}
-              <p className="font-semibold text-stone-900">
-                Bottleneck = {bn.name} at {fmt(bnPer)} s per piece
-              </p>
-              <p>
-                Capacity = {fmtInt(avail)} / {fmt(bnPer)} = {fmt(cap)} units/day
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <p>Raw material = {fmt(sc.rawMaterialDays)} days</p>
-              {sc.steps.slice(1).map((s, i) => (
-                <p key={s.id}>
-                  Before {s.name} = {fmtInt(s.wipBefore ?? 0)} / {fmtInt(daily)}{' '}
-                  = {fmt(round1(segments[i + 1]))} days
+                <p className="break-words">
+                  R̄ = ({sumText(subgroups.map((g) => g.range))}) /{' '}
+                  {subgroups.length} = {lim.rbar.toFixed(2)}
                 </p>
-              ))}
-              <p>
-                Finished goods = {fmtInt(sc.wipAfterLast)} / {fmtInt(daily)} ={' '}
-                {fmt(round1(segments[segments.length - 1]))} days
-              </p>
-              <p className="font-semibold text-stone-900">
-                Total = {segments.map((d) => fmt(round1(d))).join(' + ')} ={' '}
-                {fmt(waitTotal)} days vs total processing{' '}
-                {sc.steps.map((s) => s.cycleSec).join(' + ')} = {fmtInt(workTotal)} s
-              </p>
+              </div>
+              <div className="space-y-1.5">
+                <p>
+                  UCL<sub>X̄</sub> = X̿ + A₂R̄ = {lim.xbarbar.toFixed(2)} + {f.A2} ×{' '}
+                  {lim.rbar.toFixed(2)} = {lim.uclX.toFixed(2)}
+                </p>
+                <p>
+                  LCL<sub>X̄</sub> = X̿ − A₂R̄ = {lim.xbarbar.toFixed(2)} − {f.A2} ×{' '}
+                  {lim.rbar.toFixed(2)} = {lim.lclX.toFixed(2)}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <p>
+                  UCL<sub>R</sub> = D₄R̄ = {f.D4} × {lim.rbar.toFixed(2)} ={' '}
+                  {lim.uclR.toFixed(2)}
+                </p>
+                <p>
+                  LCL<sub>R</sub> = D₃R̄ = {f.D3} × {lim.rbar.toFixed(2)} ={' '}
+                  {lim.lclR.toFixed(2)}
+                </p>
+              </div>
             </div>
           </div>
         </div>

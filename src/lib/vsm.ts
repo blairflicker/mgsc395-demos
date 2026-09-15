@@ -1,7 +1,7 @@
 /**
- * Chapter 4 lean systems / value-stream mapping — pure computation, no React.
+ * Chapter 5 lean systems / value-stream mapping — pure computation, no React.
  *
- * Conventions match the Chapter 4 lecture exactly:
+ * Conventions match the Chapter 5 lecture exactly:
  * - Daily demand = weekly demand / 5 working days; daily availability =
  *   (shift hours − lunch hours) × 3,600 seconds.
  * - Takt = available seconds per day / daily demand — the beat the line
@@ -50,7 +50,7 @@ export interface Scenario {
   wipAfterLast: number
 }
 
-/** The Jensen Bearings problem from the Chapter 4 slides. */
+/** The Jensen Bearings problem from the Chapter 5 slides. */
 export const CLASS_SCENARIO: Scenario = {
   steps: [
     { id: 'press', name: 'Press', cycleSec: 12, setupMin: 10, wipBefore: null },

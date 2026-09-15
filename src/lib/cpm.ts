@@ -1,7 +1,7 @@
 /**
  * Critical Path Method (CPM) scheduling — pure computation, no React.
  *
- * Conventions match the Chapter 7 lecture exactly:
+ * Conventions match the Chapter 8 lecture exactly:
  * - Forward pass (the "forward game"): EST = 0 for activities with no
  *   predecessors; otherwise EST is the MAX of all predecessors' EFTs
  *   (every predecessor must finish first). EFT = EST + Estimated Time.
@@ -153,7 +153,7 @@ export function computeCpm(inputs: ActivityInput[]): CpmSchedule {
 }
 
 /**
- * The St. John's Hospital project from the Chapter 7 slides.
+ * The St. John's Hospital project from the Chapter 8 slides.
  * At these estimated times the critical path is B-D-H-J-K, 69 weeks.
  */
 export const ST_JOHNS: ActivityInput[] = [

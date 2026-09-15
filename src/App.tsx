@@ -5,18 +5,18 @@ import Launcher from './pages/Launcher'
 import ComingSoon from './pages/ComingSoon'
 import Ch1Productivity from './pages/demos/ch1'
 import SuppABreakEven from './pages/demos/supp-a'
-import Ch2ProcessAnalysis from './pages/demos/ch2'
-import Ch3QualityControl from './pages/demos/ch3'
-import Ch4LeanSystems from './pages/demos/ch4'
-import Ch5CapacityPlanning from './pages/demos/ch5'
+import Ch3ProcessAnalysis from './pages/demos/ch3'
+import Ch4QualityPerformance from './pages/demos/ch4'
+import Ch5LeanSystems from './pages/demos/ch5'
+import Ch6CapacityPlanning from './pages/demos/ch6'
 import SuppBWaitingLines from './pages/demos/supp-b'
 import SuppDLinearProgramming from './pages/demos/supp-d'
-import Ch6TheoryOfConstraints from './pages/demos/ch6'
-import Ch7ProjectManagement from './pages/demos/ch7'
-import Ch8Forecasting from './pages/demos/ch8'
-import Ch9Inventory from './pages/demos/ch9'
-import Ch12InventoryMetrics from './pages/demos/ch12'
-import Ch13FacilityLocation from './pages/demos/ch13'
+import Ch7ConstraintManagement from './pages/demos/ch7'
+import Ch8ProjectManagement from './pages/demos/ch8'
+import Ch9Forecasting from './pages/demos/ch9'
+import Ch10Inventory from './pages/demos/ch10'
+import Ch14InventoryMetrics from './pages/demos/ch14'
+import Ch15LogisticsManagement from './pages/demos/ch15'
 
 /**
  * React Router keeps the scroll position across navigations; jump each new
@@ -44,18 +44,18 @@ export default function App() {
           <Route path="/" element={<Launcher />} />
           <Route path="/ch1" element={<Ch1Productivity />} />
           <Route path="/supp-a" element={<SuppABreakEven />} />
-          <Route path="/ch2" element={<Ch2ProcessAnalysis />} />
-          <Route path="/ch3" element={<Ch3QualityControl />} />
-          <Route path="/ch4" element={<Ch4LeanSystems />} />
-          <Route path="/ch5" element={<Ch5CapacityPlanning />} />
+          <Route path="/ch3" element={<Ch3ProcessAnalysis />} />
+          <Route path="/ch4" element={<Ch4QualityPerformance />} />
+          <Route path="/ch5" element={<Ch5LeanSystems />} />
+          <Route path="/ch6" element={<Ch6CapacityPlanning />} />
           <Route path="/supp-b" element={<SuppBWaitingLines />} />
           <Route path="/supp-d" element={<SuppDLinearProgramming />} />
-          <Route path="/ch6" element={<Ch6TheoryOfConstraints />} />
-          <Route path="/ch7" element={<Ch7ProjectManagement />} />
-          <Route path="/ch8" element={<Ch8Forecasting />} />
-          <Route path="/ch9" element={<Ch9Inventory />} />
-          <Route path="/ch12" element={<Ch12InventoryMetrics />} />
-          <Route path="/ch13" element={<Ch13FacilityLocation />} />
+          <Route path="/ch7" element={<Ch7ConstraintManagement />} />
+          <Route path="/ch8" element={<Ch8ProjectManagement />} />
+          <Route path="/ch9" element={<Ch9Forecasting />} />
+          <Route path="/ch10" element={<Ch10Inventory />} />
+          <Route path="/ch14" element={<Ch14InventoryMetrics />} />
+          <Route path="/ch15" element={<Ch15LogisticsManagement />} />
           <Route path="/:slug" element={<ComingSoon />} />
         </Routes>
       </Layout>

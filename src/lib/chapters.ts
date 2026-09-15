@@ -14,6 +14,11 @@ export interface Chapter {
   exam: 1 | 2 | 3
 }
 
+/**
+ * Chapter numbers follow the 14th edition of Krajewski & Malhotra,
+ * Operations Management: Processes and Supply Chains. Chapters 2, 11, 12,
+ * 13 and Supplement C are not taught, so the numbering has gaps.
+ */
 export const chapters: Chapter[] = [
   // ── Exam 1 ──────────────────────────────────────────────
   {
@@ -35,8 +40,8 @@ export const chapters: Chapter[] = [
     exam: 1,
   },
   {
-    slug: 'ch2',
-    label: 'Chapter 2',
+    slug: 'ch3',
+    label: 'Chapter 3',
     title: 'Process Strategy & Analysis',
     description:
       'Pareto charts — sort the complaints, add the cumulative line, and find the vital few worth fixing.',
@@ -44,17 +49,17 @@ export const chapters: Chapter[] = [
     exam: 1,
   },
   {
-    slug: 'ch3',
-    label: 'Chapter 3',
-    title: 'Quality & Control Charts',
+    slug: 'ch4',
+    label: 'Chapter 4',
+    title: 'Quality & Performance (Control Charts)',
     description:
       'Sample bottles off the shelf, build X̄ and R control charts, and judge whether the process is in control.',
     status: 'available',
     exam: 1,
   },
   {
-    slug: 'ch4',
-    label: 'Chapter 4',
+    slug: 'ch5',
+    label: 'Chapter 5',
     title: 'Lean Systems',
     description:
       'Value stream mapping metrics — takt time, per-unit processing time, and finding the bottleneck.',
@@ -63,8 +68,8 @@ export const chapters: Chapter[] = [
   },
   // ── Exam 2 ──────────────────────────────────────────────
   {
-    slug: 'ch5',
-    label: 'Chapter 5',
+    slug: 'ch6',
+    label: 'Chapter 6',
     title: 'Capacity Planning',
     description:
       'Utilization, capacity cushions, and computing how many machines a process really needs.',
@@ -81,9 +86,9 @@ export const chapters: Chapter[] = [
     exam: 2,
   },
   {
-    slug: 'ch6',
-    label: 'Chapter 6',
-    title: 'Theory of Constraints',
+    slug: 'ch7',
+    label: 'Chapter 7',
+    title: 'Constraint Management',
     description:
       'Find the bottleneck and pick the product mix — traditional method vs. bottleneck method.',
     status: 'available',
@@ -99,8 +104,8 @@ export const chapters: Chapter[] = [
     exam: 2,
   },
   {
-    slug: 'ch7',
-    label: 'Chapter 7',
+    slug: 'ch8',
+    label: 'Chapter 8',
     title: 'Project Management',
     description:
       'Forward and backward pass, slack, the critical path, and cost-time tradeoffs (crashing).',
@@ -109,8 +114,8 @@ export const chapters: Chapter[] = [
   },
   // ── Exam 3 ──────────────────────────────────────────────
   {
-    slug: 'ch8',
-    label: 'Chapter 8',
+    slug: 'ch9',
+    label: 'Chapter 9',
     title: 'Forecasting',
     description:
       'Naive, moving average, exponential smoothing, and regression forecasts — compared with MAD, MSE, and MAPE.',
@@ -118,8 +123,8 @@ export const chapters: Chapter[] = [
     exam: 3,
   },
   {
-    slug: 'ch9',
-    label: 'Chapter 9',
+    slug: 'ch10',
+    label: 'Chapter 10',
     title: 'Inventory Management (EOQ)',
     description:
       'The economic order quantity model — cost curves, the sawtooth diagram, and reorder points.',
@@ -127,8 +132,8 @@ export const chapters: Chapter[] = [
     exam: 3,
   },
   {
-    slug: 'ch12',
-    label: 'Chapter 12',
+    slug: 'ch14',
+    label: 'Chapter 14',
     title: 'Supply Chain Design',
     description:
       'Aggregate inventory value, weeks of supply, and inventory turnover — two companies side by side.',
@@ -136,9 +141,9 @@ export const chapters: Chapter[] = [
     exam: 3,
   },
   {
-    slug: 'ch13',
-    label: 'Chapter 13',
-    title: 'Supply Chain Networks',
+    slug: 'ch15',
+    label: 'Chapter 15',
+    title: 'Logistics Management',
     description:
       'Facility location — center of gravity, load-distance scores, and comparing candidate sites.',
     status: 'available',

@@ -49,7 +49,7 @@ function TrashIcon() {
   )
 }
 
-export default function Ch13FacilityLocation() {
+export default function Ch15LogisticsManagement() {
   const [customers, setCustomers] = useState<CustomerInput[]>(cloneCustomers)
   const [pin, setPin] = useState<Point>(DEFAULT_PIN)
   const [metric, setMetric] = useState<DistanceMetric>('rectilinear')
@@ -57,7 +57,7 @@ export default function Ch13FacilityLocation() {
   const [showAnswers, setShowAnswers] = useState(true)
 
   useEffect(() => {
-    document.title = 'Facility Location · MGSC 395'
+    document.title = 'Logistics Management · MGSC 395'
     return () => {
       document.title = 'MGSC 395 · Interactive Demos'
     }
@@ -140,7 +140,7 @@ export default function Ch13FacilityLocation() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <DemoHeader
-        label="Chapter 13 · Supply Chain Logistic Networks"
+        label="Chapter 15 · Logistics Management"
         title="The Center of Gravity, Live"
       >
         The power-generator example from class — drag the pin to test a

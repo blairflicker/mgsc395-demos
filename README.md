@@ -9,22 +9,26 @@ management.
 
 ## Chapters
 
+Chapter numbers follow the **14th edition** of Krajewski & Malhotra,
+_Operations Management: Processes and Supply Chains_. Chapters 2, 11, 12,
+13 and Supplement C are not taught, so the numbering has gaps.
+
 | Route | Chapter | Demo |
 | --- | --- | --- |
 | `/ch1` | Chapter 1 | Productivity |
 | `/supp-a` | Supplement A | Break-Even Analysis |
-| `/ch2` | Chapter 2 | Process Strategy & Analysis |
-| `/ch3` | Chapter 3 | Quality & Control Charts |
-| `/ch4` | Chapter 4 | Lean Systems |
-| `/ch5` | Chapter 5 | Capacity Planning |
+| `/ch3` | Chapter 3 | Process Strategy & Analysis |
+| `/ch4` | Chapter 4 | Quality & Performance (Control Charts) |
+| `/ch5` | Chapter 5 | Lean Systems |
+| `/ch6` | Chapter 6 | Capacity Planning |
 | `/supp-b` | Supplement B | Waiting Lines |
-| `/ch6` | Chapter 6 | Theory of Constraints |
+| `/ch7` | Chapter 7 | Constraint Management |
 | `/supp-d` | Supplement D | Linear Programming |
-| `/ch7` | Chapter 7 | Project Management |
-| `/ch8` | Chapter 8 | Forecasting |
-| `/ch9` | Chapter 9 | Inventory Management (EOQ) |
-| `/ch12` | Chapter 12 | Supply Chain Design |
-| `/ch13` | Chapter 13 | Supply Chain Networks |
+| `/ch8` | Chapter 8 | Project Management |
+| `/ch9` | Chapter 9 | Forecasting |
+| `/ch10` | Chapter 10 | Inventory Management (EOQ) |
+| `/ch14` | Chapter 14 | Supply Chain Design |
+| `/ch15` | Chapter 15 | Logistics Management |
 
 ## Stack
 

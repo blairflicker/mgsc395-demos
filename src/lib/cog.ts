@@ -1,7 +1,7 @@
 /**
  * Center-of-gravity facility location — pure computation, no React.
  *
- * Conventions match the Chapter 13 lecture exactly:
+ * Conventions match the Chapter 15 lecture exactly:
  * - Center of gravity: x_CG = Σ(lᵢ·xᵢ)/Σlᵢ and y_CG = Σ(lᵢ·yᵢ)/Σlᵢ —
  *   a load-weighted average of the customer coordinates, computed
  *   separately for x and y.
@@ -34,7 +34,7 @@ export type DistanceMetric = 'rectilinear' | 'euclidean'
 export const GRID_MAX_X = 20
 export const GRID_MAX_Y = 16
 
-/** The power-generator shipping example from the Chapter 13 slides:
+/** The power-generator shipping example from the Chapter 15 slides:
  *  607,000 tons across eight customer locations. */
 export const CLASS_CUSTOMERS: CustomerInput[] = [
   { id: 'three-rivers', name: 'Three Rivers, MI', x: 7, y: 13, load: 5_000 },
@@ -147,7 +147,7 @@ export interface SiteFinancials {
   profit: number
 }
 
-/** Columbia vs Atlanta from the Chapter 13 slides:
+/** Columbia vs Atlanta from the Chapter 15 slides:
  *  profits $28,000,000 vs $29,000,000 — Atlanta wins. */
 export const CLASS_SITES: SiteInput[] = [
   {

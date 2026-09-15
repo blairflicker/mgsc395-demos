@@ -18,7 +18,7 @@ import {
   type LpProblem,
 } from '../../../lib/lp'
 
-/** validated chart palette — same product colors as Chapter 6 */
+/** validated chart palette — same product colors as Chapter 7 */
 const PRODUCT_COLOR: Record<ProductId, string> = {
   A: '#1d4ed8',
   B: '#a52547',
@@ -29,7 +29,7 @@ const PRODUCT_COLOR: Record<ProductId, string> = {
 const money = (v: number) => `$${v.toLocaleString('en-US')}`
 const num = (v: number) => v.toLocaleString('en-US')
 
-/** the Chapter 6 traditional plan, for the class-data comparison line */
+/** the Chapter 7 traditional plan, for the class-data comparison line */
 const TRADITIONAL_PLAN: Plan = { A: 60, B: 80, C: 40, D: 100 }
 
 /** a variable letter in its product color */
@@ -395,7 +395,7 @@ export default function SuppDLinearProgramming() {
           </div>
           <p className="mt-3 text-sm text-stone-600 tabular-nums">
             {isClass
-              ? `The Chapter 6 traditional plan earns ${money(rivalValue)} — the LP finds ${money(opt.value - rivalValue)} more.`
+              ? `The Chapter 7 traditional plan earns ${money(rivalValue)} — the LP finds ${money(opt.value - rivalValue)} more.`
               : `Filling demand in margin order (${PRODUCTS.map((p) => `${p} ${num(greedy[p])}`).join(', ')}) earns ${money(rivalValue)} — the LP finds ${money(opt.value - rivalValue)} more.`}
           </p>
         </div>

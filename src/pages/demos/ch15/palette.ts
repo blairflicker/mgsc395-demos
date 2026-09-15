@@ -1,4 +1,4 @@
-/** Chart palette per the conventions in src/pages/demos/ch7/palette.ts:
+/** Chart palette per the conventions in src/pages/demos/ch8/palette.ts:
  *  garnet #a52547 for emphasis (the center of gravity, the winning site),
  *  neutral stone for muted elements, dashed #57534e for reference lines.
  *  Text is always set in stone ink colors, never in series colors.

@@ -1,253 +1,79 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import DemoHeader from '../../../components/DemoHeader'
 import {
-  CLASS_DGP,
-  CLASS_SAMPLES,
-  FACTORS,
-  MAX_N,
-  MIN_N,
-  limits,
-  makeShelf,
-  makeSubgroup,
-  randomDgp,
-  verdict,
-  type Dgp,
-  type Subgroup,
-  type VerdictStatus,
-} from '../../../lib/spc'
-import { ControlCharts } from './Charts'
+  CLASS_SCENARIO,
+  paretoRows,
+  randomCategories,
+  totalCount,
+  type ParetoScenario,
+} from '../../../lib/pareto'
+import { ParetoChart, type ChartMode } from './ParetoChart'
 
-const classSubgroups = (): Subgroup[] =>
-  CLASS_SAMPLES.map((values, i) => makeSubgroup(`c${i + 1}`, values))
+const fmtPct = (fraction: number) => `${(fraction * 100).toFixed(1)}%`
 
-/** seconds for a bottle to cross the belt (1,400 px of travel) */
-const BELT_DUR = 45
-/** seconds between bottles appearing on the right */
-const SPAWN_S = 1.8
-/** bottles pre-placed along the belt on a fresh line */
-const INITIAL_BOTTLES = 24
+/** lowercase a category name for mid-sentence use, sparing acronyms */
+const inSentence = (name: string) =>
+  /[A-Z]/.test(name[1] ?? '') ? name : name[0].toLowerCase() + name.slice(1)
 
-interface LineBottle {
-  id: number
-  value: number
-  /** negative delays pre-place a bottle partway down the belt */
-  delay: number
-}
+/** "a", "a and b", or "a, b, and c" */
+const joinNames = (names: string[]) =>
+  names.length <= 2
+    ? names.join(' and ')
+    : `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
 
-let bottleSeq = 1
-
-const freshLine = (dgp: Dgp, t: number): LineBottle[] =>
-  makeShelf(dgp, t, INITIAL_BOTTLES).map((value, i) => ({
-    id: bottleSeq++,
-    value,
-    delay: -(i * SPAWN_S),
-  }))
-
-function BottleGlyph({
-  value = 0,
-  revealed = false,
-  className = 'h-14 w-10',
-}: {
-  value?: number
-  revealed?: boolean
-  className?: string
-}) {
-  const frac = Math.min(0.97, Math.max(0.06, (value - 11.3) / 1.4))
-  const bodyTop = 20
-  const bodyH = 38
-  const fillH = frac * bodyH
-  return (
-    <svg viewBox="0 0 44 64" className={className} aria-hidden>
-      <rect x="17" y="2" width="10" height="5" rx="1.5" fill="#57534e" />
-      <path
-        d="M18,7 L26,7 L26,12 L31,18 L31,58 Q31,61 28,61 L16,61 Q13,61 13,58 L13,18 L18,12 Z"
-        fill="#fafaf9"
-        stroke="#a8a29e"
-        strokeWidth="1.4"
-      />
-      {revealed ? (
-        <rect
-          x="14.5"
-          y={bodyTop + (bodyH - fillH)}
-          width="15"
-          height={fillH}
-          fill="#0d9488"
-          fillOpacity="0.55"
-        />
-      ) : (
-        <text x="22" y="45" textAnchor="middle" fontSize="15" fontWeight="600" fill="#a8a29e">
-          ?
-        </text>
-      )}
-    </svg>
-  )
-}
-
-/** "a + b + … " with every value spelled out — the point is the arithmetic */
-const sumText = (values: number[]): string =>
-  values.map((v) => v.toFixed(2)).join(' + ')
-
-const VERDICT_STYLE: Record<VerdictStatus, { label: string; cls: string }> = {
-  insufficient: { label: 'Too early to call', cls: 'text-stone-500' },
-  'in-control': { label: 'In control', cls: 'text-teal-700' },
-  questionable: { label: 'Questionable', cls: 'text-amber-700' },
-  out: { label: 'Out of control', cls: 'text-garnet-800' },
-}
-
-export default function Ch3QualityControl() {
-  const [n, setN] = useState(5)
-  const [dgp, setDgp] = useState<Dgp>({ ...CLASS_DGP })
-  const [subgroups, setSubgroups] = useState<Subgroup[]>(classSubgroups)
-  const [line, setLine] = useState<LineBottle[]>(() => freshLine(CLASS_DGP, 11))
-  const [tray, setTray] = useState<number[]>([])
+export default function Ch3ProcessAnalysis() {
+  const [scenario, setScenario] = useState<ParetoScenario>(CLASS_SCENARIO)
+  const [isClass, setIsClass] = useState(true)
   const [showAnswers, setShowAnswers] = useState(true)
-  /** the box whose contents are popped open, and where the popover sits */
-  const [popover, setPopover] = useState<{ index: number; left: number; width: number } | null>(null)
-  const boxRowRef = useRef<HTMLDivElement>(null)
-  const idRef = useRef(1)
+  const [mode, setMode] = useState<ChartMode>('collected')
+  const [fixedIds, setFixedIds] = useState<ReadonlySet<string>>(new Set())
 
   useEffect(() => {
-    document.title = 'Quality Control · MGSC 395'
+    document.title = 'Process Analysis · MGSC 395'
     return () => {
       document.title = 'MGSC 395 · Interactive Demos'
     }
   }, [])
 
-  const t = subgroups.length + 1
-  const complete = tray.length === n
-  const lim = limits(subgroups, n)
-  const verd = verdict(subgroups, lim)
-  const f = FACTORS[n]
+  const { unit, categories } = scenario
+  const total = totalCount(categories)
+  const rows = paretoRows(categories)
+  const topTwo = rows.slice(0, 2)
+  const topTwoCount = topTwo.reduce((s, r) => s + r.category.count, 0)
 
-  // new bottles keep appearing on the right of the belt
-  useEffect(() => {
-    const iv = setInterval(() => {
-      const value = makeShelf(dgp, t, 1)[0]
-      setLine((l) => [...l.slice(-40), { id: bottleSeq++, value, delay: 0 }])
-    }, SPAWN_S * 1000)
-    return () => clearInterval(iv)
-  }, [dgp, t])
-
-  const bottleGone = (id: number) => {
-    setLine((l) => l.filter((b) => b.id !== id))
-  }
-
-  const pick = (id: number) => {
-    if (complete) return
-    const bottle = line.find((b) => b.id === id)
-    if (!bottle) return
-    setLine((l) => l.filter((b) => b.id !== id))
-    setTray((s) => (s.length < n ? [...s, bottle.value] : s))
-  }
-
-  const seal = () => {
-    if (!complete) return
-    setSubgroups((list) => [...list, makeSubgroup(`b${idRef.current++}`, tray)])
-    setTray([])
-    setPopover(null)
-  }
-
-  const autoSample = (count: number) => {
-    setSubgroups((list) => {
-      const next = [...list]
-      for (let k = 0; k < count; k++) {
-        next.push(makeSubgroup(`b${idRef.current++}`, makeShelf(dgp, next.length + 1, n)))
-      }
-      return next
-    })
-    setTray([])
-    setPopover(null)
-  }
-
-  const changeDgp = (patch: Partial<Dgp>) => {
-    setDgp({ ...dgp, ...patch, t0: t })
-  }
-
-  const changeN = (value: number) => {
-    if (!Number.isFinite(value)) return
-    const v = Math.min(MAX_N, Math.max(MIN_N, Math.round(value)))
-    const next = { ...dgp, t0: 1 }
-    setN(v)
-    setDgp(next)
-    setSubgroups([])
-    setLine(freshLine(next, 1))
-    setTray([])
-    setPopover(null)
-  }
-
-  const clearSamples = () => {
-    const next = { ...dgp, t0: 1 }
-    setDgp(next)
-    setSubgroups([])
-    setLine(freshLine(next, 1))
-    setTray([])
-    setPopover(null)
-  }
-
-  // ── practice toolbar ────────────────────────────────────
-  const isClassData =
-    n === 5 &&
-    subgroups.length === CLASS_SAMPLES.length &&
-    subgroups[0]?.id === 'c1' &&
-    dgp.meanPattern === CLASS_DGP.meanPattern &&
-    dgp.varPattern === CLASS_DGP.varPattern &&
-    dgp.sigma === CLASS_DGP.sigma &&
-    dgp.strength === CLASS_DGP.strength
+  const fixedRows = rows.filter((r) => fixedIds.has(r.category.id))
+  const fixedCount = fixedRows.reduce((s, r) => s + r.category.count, 0)
 
   const backToClass = () => {
-    setN(5)
-    setDgp({ ...CLASS_DGP })
-    setSubgroups(classSubgroups())
-    setLine(freshLine(CLASS_DGP, 11))
-    setTray([])
-    setPopover(null)
+    setScenario(CLASS_SCENARIO)
+    setIsClass(true)
     setShowAnswers(true)
+    setMode('collected')
+    setFixedIds(new Set())
   }
 
   const makeRandom = () => {
-    const d = randomDgp()
-    setDgp(d)
-    setSubgroups([])
-    setLine(freshLine(d, 1))
-    setTray([])
-    setPopover(null)
+    setScenario(randomCategories())
+    setIsClass(false)
     setShowAnswers(false)
+    setMode('collected')
+    setFixedIds(new Set())
   }
 
-  useEffect(() => {
-    if (popover === null) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPopover(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [popover])
-
-  const clickBox = (i: number, e: React.MouseEvent<HTMLButtonElement>) => {
-    if (popover?.index === i) {
-      setPopover(null)
-      return
-    }
-    const wrap = boxRowRef.current
-    if (!wrap) return
-    const w = wrap.getBoundingClientRect()
-    const b = e.currentTarget.getBoundingClientRect()
-    const width = Math.min(560, w.width)
-    const center = b.left - w.left + b.width / 2
-    const left = Math.max(0, Math.min(center - width / 2, w.width - width))
-    setPopover({ index: i, left, width })
+  const toggleFixed = (id: string) => {
+    setFixedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
-
-  const popped =
-    popover !== null && popover.index < subgroups.length
-      ? subgroups[popover.index]
-      : null
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <DemoHeader label="Chapter 3 · Quality" title="The Sampling Lab">
-        Pick bottles off the line, box the samples, and decide from the X̄
-        and R charts whether the process is in control.
+      <DemoHeader label="Chapter 3 · Process Analysis" title="The Vital Few">
+        Sort the tally tallest-first and the chart tells you which one or two
+        problems carry most of the {unit}.
       </DemoHeader>
 
       {/* Practice toolbar */}
@@ -269,410 +95,138 @@ export default function Ch3QualityControl() {
         </button>
         <button
           onClick={backToClass}
-          disabled={isClassData}
+          disabled={isClass}
           className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
         >
           Back to class data
         </button>
-        <button
-          onClick={clearSamples}
-          disabled={subgroups.length === 0}
-          className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-        >
-          Clear samples
-        </button>
       </div>
 
-      {/* The data-generating process — the answer under the hood */}
-      {showAnswers && (
-        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-          <h2 className="mb-3 text-lg font-semibold text-stone-900">
-            Under the hood
-          </h2>
-          <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-            <div>
-              <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-                Process mean
-              </span>
-              <div className="flex overflow-hidden rounded-lg border border-stone-300 text-sm">
-                {(
-                  [
-                    ['stable', 'Stable'],
-                    ['up', 'Increasing'],
-                    ['down', 'Decreasing'],
-                    ['seasonal', 'Seasonal'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    onClick={() => changeDgp({ meanPattern: value })}
-                    aria-pressed={dgp.meanPattern === value}
-                    className={
-                      dgp.meanPattern === value
-                        ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
-                        : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
-                    }
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-                Variability
-              </span>
-              <div className="flex overflow-hidden rounded-lg border border-stone-300 text-sm">
-                {(
-                  [
-                    ['stable', 'Stable'],
-                    ['increasing', 'Increasing'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    onClick={() => changeDgp({ varPattern: value })}
-                    aria-pressed={dgp.varPattern === value}
-                    className={
-                      dgp.varPattern === value
-                        ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
-                        : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
-                    }
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-                Bottle-to-bottle <span className="normal-case">σ</span>
-              </span>
-              <span className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min={0.02}
-                  max={0.3}
-                  step={0.01}
-                  value={dgp.sigma}
-                  onChange={(e) => changeDgp({ sigma: Number(e.target.value) })}
-                  className="w-28 accent-garnet-700"
-                />
-                <span className="w-16 text-sm text-stone-600 tabular-nums">
-                  {dgp.sigma.toFixed(2)} oz
-                </span>
-              </span>
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-                Strength
-              </span>
-              <span className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min={0.01}
-                  max={0.1}
-                  step={0.01}
-                  value={dgp.strength}
-                  disabled={dgp.meanPattern === 'stable' && dgp.varPattern === 'stable'}
-                  onChange={(e) => changeDgp({ strength: Number(e.target.value) })}
-                  className="w-28 accent-garnet-700 disabled:opacity-40"
-                />
-                <span
-                  className={`w-24 text-sm tabular-nums ${
-                    dgp.meanPattern === 'stable' && dgp.varPattern === 'stable'
-                      ? 'text-stone-400'
-                      : 'text-stone-600'
-                  }`}
-                >
-                  {dgp.strength.toFixed(2)} / sample
-                </span>
-              </span>
-            </label>
-          </div>
-        </div>
-      )}
-
-      {/* The assembly line */}
+      {/* The survey — read-only givens, in collected order */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-semibold text-stone-900">
-              The assembly line — sample {t}
-            </h2>
-            <p className="text-sm text-stone-600">
-              {complete
-                ? 'Sample complete — seal the box to measure it.'
-                : `Pick ${n} bottles off the line as they go by.`}
-            </p>
-          </div>
-          <label className="flex items-center gap-2 text-sm text-stone-600">
-            Bottles per box (n)
-            <input
-              type="number"
-              min={MIN_N}
-              max={MAX_N}
-              value={n}
-              onChange={(e) => changeN(Number(e.target.value))}
-              aria-label="Sample size n"
-              className="w-16 rounded border border-stone-300 bg-white px-2 py-1 text-sm tabular-nums focus:border-garnet-400 focus:outline-none"
-            />
-          </label>
-        </div>
-        <div className="relative h-24 overflow-hidden">
-          <div className="absolute inset-x-0 bottom-0 h-2 rounded bg-stone-200" />
-          {line.map((b) => (
-            <button
-              key={b.id}
-              onClick={() => pick(b.id)}
-              onAnimationEnd={() => bottleGone(b.id)}
-              disabled={complete}
-              aria-label="Take this bottle off the line"
-              className="ch3-belt-move absolute top-0 rounded px-2 py-3 transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-garnet-400 disabled:cursor-default"
-              style={{
-                right: -56,
-                animationDuration: `${BELT_DUR}s`,
-                animationDelay: `${b.delay}s`,
-              }}
-            >
-              <BottleGlyph />
-            </button>
-          ))}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-stone-100 pt-3">
-          <span className="text-xs font-semibold text-stone-500 uppercase">
-            Current sample
-          </span>
-          <span className="flex items-start gap-1.5">
-            {Array.from({ length: n }, (_, i) => (
-              <span
-                key={i}
+        <h2 className="mb-3 text-lg font-semibold text-stone-900">The survey</h2>
+        <table className="text-sm tabular-nums">
+          <thead>
+            <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+              <th className="py-1.5 pr-10 font-semibold">Category</th>
+              <th className="py-1.5 text-right font-semibold">{unit}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((c) => (
+              <tr key={c.id} className="border-b border-stone-100">
+                <td className="py-1 pr-10 text-stone-700">{c.name}</td>
+                <td className="py-1 text-right text-stone-700">{c.count}</td>
+              </tr>
+            ))}
+            <tr className="font-semibold text-stone-900">
+              <td className="py-1 pr-10">Total</td>
+              <td className="py-1 text-right">{total}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* The chart */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-stone-900">The chart</h2>
+          <div className="flex overflow-hidden rounded-lg border border-stone-300 text-sm">
+            {(
+              [
+                ['collected', 'As collected'],
+                ['sorted', 'Sorted (Pareto)'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setMode(value)}
+                aria-pressed={mode === value}
                 className={
-                  i < tray.length
-                    ? 'flex w-12 flex-col items-center'
-                    : 'flex h-16 w-12 flex-col items-center rounded-lg border border-dashed border-stone-300'
+                  mode === value
+                    ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
+                    : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
                 }
               >
-                {i < tray.length && (
-                  <>
-                    <BottleGlyph
-                      value={tray[i]}
-                      revealed={complete}
-                      className="h-12 w-8"
-                    />
-                    <span className="block h-4 text-center text-[11px] text-stone-600 tabular-nums">
-                      {complete ? tray[i].toFixed(2) : ''}
-                    </span>
-                  </>
-                )}
-              </span>
+                {label}
+              </button>
             ))}
-          </span>
-          <button
-            onClick={seal}
-            disabled={!complete}
-            className="rounded-lg bg-garnet-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-garnet-700 disabled:opacity-40"
-          >
-            {complete ? 'Seal the box' : `Seal the box (${tray.length}/${n})`}
-          </button>
-          <button
-            onClick={() => autoSample(1)}
-            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
-          >
-            Auto-sample
-          </button>
-          <button
-            onClick={() => autoSample(5)}
-            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
-          >
-            Auto-sample ×5
-          </button>
-        </div>
-      </div>
-
-      {/* The boxes — only X̄ and R survive */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-3 text-lg font-semibold text-stone-900">The boxes</h2>
-        {subgroups.length === 0 ? (
-          <p className="py-2 text-sm text-stone-500">
-            No boxes yet — seal your first sample above.
-          </p>
-        ) : (
-          <>
-            <div ref={boxRowRef} className="relative">
-              <div
-                className="flex gap-2 overflow-x-auto pb-1"
-                onScroll={() => setPopover(null)}
-              >
-                {subgroups.map((g, i) => (
-                  <button
-                    key={g.id}
-                    onClick={(e) => clickBox(i, e)}
-                    aria-pressed={popover?.index === i}
-                    aria-label={`Open box ${i + 1}`}
-                    className={
-                      popover?.index === i
-                        ? 'min-w-24 shrink-0 rounded-lg border border-garnet-400 bg-garnet-50/60 px-2.5 py-2 text-center ring-2 ring-garnet-200'
-                        : 'min-w-24 shrink-0 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-2 text-center hover:border-garnet-300'
-                    }
-                  >
-                    <div className="text-xs font-semibold text-stone-500">#{i + 1}</div>
-                    <div className="text-sm text-stone-800 tabular-nums">
-                      X̄ {g.mean.toFixed(2)}
-                    </div>
-                    <div className="text-sm text-stone-800 tabular-nums">
-                      R {g.range.toFixed(2)}
-                    </div>
-                  </button>
-                ))}
-              </div>
-              {popover !== null && popped !== null && (
-                <div
-                  role="dialog"
-                  aria-label={`Inside box ${popover.index + 1}`}
-                  className="absolute z-20 space-y-1 rounded-xl border border-stone-300 bg-white p-4 text-sm text-stone-700 shadow-lg tabular-nums"
-                  style={{ top: 'calc(100% + 4px)', left: popover.left, width: popover.width }}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold text-stone-900">
-                      Box #{popover.index + 1}
-                    </span>
-                    <button
-                      onClick={() => setPopover(null)}
-                      aria-label="Close"
-                      className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        aria-hidden
-                      >
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div className="break-words">
-                    Observations: {popped.values.map((v) => v.toFixed(2)).join(', ')}
-                  </div>
-                  <div className="break-words">
-                    X̄ = ({popped.values.map((v) => v.toFixed(2)).join(' + ')}) /{' '}
-                    {popped.values.length} = {popped.mean.toFixed(2)}
-                  </div>
-                  <div>
-                    R = {Math.max(...popped.values).toFixed(2)} −{' '}
-                    {Math.min(...popped.values).toFixed(2)} = {popped.range.toFixed(2)}
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* The charts */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-stone-900">
-            The control charts
-          </h2>
-          <span className="text-xs text-stone-500 tabular-nums">
-            n = {n} → A₂ = {f.A2} · D₃ = {f.D3} · D₄ = {f.D4}
-          </span>
-        </div>
-        {lim === null ? (
-          <p className="py-4 text-center text-sm text-stone-500">
-            The charts appear once the first box is sealed.
-          </p>
-        ) : (
-          <ControlCharts subgroups={subgroups} lim={lim} highlight={showAnswers} />
-        )}
-        {showAnswers && (
-          <div className="mt-4 border-t border-stone-100 pt-3">
-            <span className={`text-sm font-bold ${VERDICT_STYLE[verd.status].cls}`}>
-              {VERDICT_STYLE[verd.status].label}
-            </span>
-            <span className="ml-2 text-sm text-stone-600">{verd.detail}</span>
           </div>
-        )}
+        </div>
+        <ParetoChart
+          categories={categories}
+          mode={mode}
+          fixedIds={fixedIds}
+          onToggle={toggleFixed}
+          unit={unit}
+        />
+        <p className="mt-2 text-sm text-stone-600 tabular-nums">
+          {fixedRows.length === 0 ? (
+            'Click the problems you would fix.'
+          ) : (
+            <>
+              Fix{' '}
+              {joinNames(fixedRows.map((r) => inSentence(r.category.name)))} →{' '}
+              <span className="font-semibold text-stone-900">
+                {fixedCount} of {total} {unit} ({fmtPct(fixedCount / total)})
+              </span>{' '}
+              addressed.
+            </>
+          )}
+        </p>
       </div>
 
-      {/* The hand calculations behind the charts */}
-      {showAnswers && lim !== null && (
+      {/* The calculations */}
+      {showAnswers && (
         <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
           <h2 className="mb-3 text-lg font-semibold text-stone-900">
             The calculations
           </h2>
-          <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
-            <div>
-              <h3 className="mb-1.5 max-w-56 text-sm font-semibold text-stone-800">
-                Factors for Calculating Three Sigma Limits for the X̄-Chart and
-                R-Chart
-              </h3>
-              <table className="text-sm tabular-nums">
-              <thead>
-                <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                  <th className="py-1.5 pr-5 font-semibold">n</th>
-                  <th className="py-1.5 pr-5 text-right font-semibold">A₂</th>
-                  <th className="py-1.5 pr-5 text-right font-semibold">D₃</th>
-                  <th className="py-1.5 text-right font-semibold">D₄</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(FACTORS).map(([size, fac]) => (
-                  <tr
-                    key={size}
-                    className={
-                      Number(size) === n
-                        ? 'border-b border-stone-100 bg-garnet-50 font-semibold text-garnet-900'
-                        : 'border-b border-stone-100 text-stone-700 last:border-0'
-                    }
-                  >
-                    <td className="py-0.5 pr-5 pl-1">{size}</td>
-                    <td className="py-0.5 pr-5 text-right">{fac.A2.toFixed(3)}</td>
-                    <td className="py-0.5 pr-5 text-right">{fac.D3.toFixed(3)}</td>
-                    <td className="py-0.5 pr-1 text-right">{fac.D4.toFixed(3)}</td>
+          <div className="space-y-4 text-sm text-stone-700 tabular-nums">
+            <div className="overflow-x-auto">
+              <table className="min-w-96 text-sm">
+                <thead>
+                  <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                    <th className="py-1.5 pr-8 font-semibold">Category</th>
+                    <th className="py-1.5 pr-8 text-right font-semibold">
+                      Count
+                    </th>
+                    <th className="py-1.5 pr-8 text-right font-semibold">
+                      Percent
+                    </th>
+                    <th className="py-1.5 text-right font-semibold">
+                      Cumulative
+                    </th>
                   </tr>
-                ))}
-              </tbody>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr
+                      key={r.category.id}
+                      className="border-b border-stone-100 last:border-0"
+                    >
+                      <td className="py-1 pr-8 text-stone-700">
+                        {r.category.name}
+                      </td>
+                      <td className="py-1 pr-8 text-right text-stone-700">
+                        {r.category.count}
+                      </td>
+                      <td className="py-1 pr-8 text-right text-stone-700">
+                        {r.category.count} / {total} = {fmtPct(r.percent)}
+                      </td>
+                      <td className="py-1 text-right text-stone-700">
+                        {fmtPct(r.cumulativePercent)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
-            <div className="min-w-0 flex-1 basis-80 space-y-4 text-sm text-stone-700 tabular-nums">
-              <div className="space-y-1.5">
-                <p className="break-words">
-                  X̿ = ({sumText(subgroups.map((g) => g.mean))}) /{' '}
-                  {subgroups.length} = {lim.xbarbar.toFixed(2)}
-                </p>
-                <p className="break-words">
-                  R̄ = ({sumText(subgroups.map((g) => g.range))}) /{' '}
-                  {subgroups.length} = {lim.rbar.toFixed(2)}
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <p>
-                  UCL<sub>X̄</sub> = X̿ + A₂R̄ = {lim.xbarbar.toFixed(2)} + {f.A2} ×{' '}
-                  {lim.rbar.toFixed(2)} = {lim.uclX.toFixed(2)}
-                </p>
-                <p>
-                  LCL<sub>X̄</sub> = X̿ − A₂R̄ = {lim.xbarbar.toFixed(2)} − {f.A2} ×{' '}
-                  {lim.rbar.toFixed(2)} = {lim.lclX.toFixed(2)}
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <p>
-                  UCL<sub>R</sub> = D₄R̄ = {f.D4} × {lim.rbar.toFixed(2)} ={' '}
-                  {lim.uclR.toFixed(2)}
-                </p>
-                <p>
-                  LCL<sub>R</sub> = D₃R̄ = {f.D3} × {lim.rbar.toFixed(2)} ={' '}
-                  {lim.lclR.toFixed(2)}
-                </p>
-              </div>
-            </div>
+            <p className="font-semibold text-stone-900">
+              Fixing the top two addresses{' '}
+              {topTwo.map((r) => r.category.count).join(' + ')} = {topTwoCount}{' '}
+              of {total} = {fmtPct(topTwoCount / total)}.
+            </p>
           </div>
         </div>
       )}

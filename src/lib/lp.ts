@@ -4,8 +4,8 @@
  * Conventions:
  * - Decision variables A, B, C, D — units of each product made per week.
  * - Objective: maximize total contribution margin, max Σ mₚ·Xₚ. Pure
- *   margins only — no fixed labor or overhead here, unlike the Chapter 6
- *   P&L, so the class LP's objective values sit $12,100 above ch6 profits.
+ *   margins only — no fixed labor or overhead here, unlike the Chapter 7
+ *   P&L, so the class LP's objective values sit $12,100 above ch7 profits.
  * - Constraints: four demand caps Xₚ ≤ dₚ, five worker weeks
  *   Σ TIME[w][p]·Xₚ ≤ 2,400 minutes, and non-negativity Xₚ ≥ 0.
  * - The time matrix and the 2,400-minute capacity always come from
@@ -13,7 +13,7 @@
  *
  * Targets on CLASS_LP (checked by a node script before every commit):
  * - solveLp(CLASS_LP) → plan (60, 70, 80, 100), value $14,590 — the
- *   Chapter 6 bottleneck plan.
+ *   Chapter 7 bottleneck plan.
  * - evaluate at the traditional plan (60, 80, 40, 100) → $13,660, all
  *   constraints satisfied, Xavier exactly at 2,400 / 2,400.
  *
@@ -199,7 +199,7 @@ export function solveLp(problem: LpProblem): LpSolution {
 /**
  * The intuitive plan: rank products by unit margin and fill each to its
  * demand or to whatever whole number of units the workers' remaining
- * minutes allow — Chapter 6's traditional method, generalized.
+ * minutes allow — Chapter 7's traditional method, generalized.
  */
 export function greedyPlan(problem: LpProblem): Plan {
   const order = [...PRODUCTS].sort((a, b) => problem.margins[b] - problem.margins[a])

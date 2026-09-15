@@ -51,7 +51,7 @@ function nextItemId(items: { id: string }[], prefix: string): string {
   return `${prefix}${k}`
 }
 
-export default function Ch12InventoryMetrics() {
+export default function Ch14InventoryMetrics() {
   const [companies, setCompanies] = useState<[Company, Company]>(cloneClass)
   const [showAnswers, setShowAnswers] = useState(true)
 
@@ -183,7 +183,7 @@ export default function Ch12InventoryMetrics() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <DemoHeader
-        label="Chapter 12 · Supply Chain Design"
+        label="Chapter 14 · Supply Chain Design"
         title="How Fast Does Inventory Move?"
       >
         Two firms selling the same catalog — edit their inventories and

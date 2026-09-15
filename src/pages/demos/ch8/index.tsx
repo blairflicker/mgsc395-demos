@@ -1,259 +1,244 @@
 import { useEffect, useMemo, useState } from 'react'
 import DemoHeader from '../../../components/DemoHeader'
 import {
-  CLASS_DEMAND,
-  MAX_ALPHA,
-  MAX_MA_N,
-  MAX_PERIODS,
-  MIN_ALPHA,
-  MIN_MA_N,
-  MIN_PERIODS,
-  errorRows,
-  expSmoothingForecast,
-  generateDemand,
-  metricsFrom,
-  movingAverageForecast,
-  naiveForecast,
-  randomDemand,
-  regressionFit,
-  regressionForecast,
-  type ErrorRow,
-  type GeneratorOptions,
-  type Metrics,
-} from '../../../lib/forecast'
-import { ForecastChart, type ChartSeries } from './Chart'
-import { COLOR_ES, COLOR_MA, COLOR_NAIVE, COLOR_REGRESSION } from './palette'
+  ST_JOHNS,
+  computeCpm,
+  descendantsOf,
+  nextActivityId,
+  randomProject,
+  type ActivityInput,
+  type LayoutPoint,
+} from '../../../lib/cpm'
+import { Network } from './Network'
+import { Gantt } from './Gantt'
+import { COLOR_CRITICAL, COLOR_MUTED } from './palette'
 import { downloadWorksheet } from './worksheet'
 
-type MethodId = 'naive' | 'ma' | 'es' | 'regression'
+const MIN_DUR = 1
+const MAX_DUR = 52
 
-interface DemandRow {
-  /** stable row key, never shown */
-  id: string
-  demand: number
+const CLASS_PLAN = computeCpm(ST_JOHNS)
+
+/** an activity row in the editor; hiding removes it from the NETWORK
+ *  DIAGRAM only — every calculation (paths, schedule, Gantt) still uses
+ *  the full project */
+interface ActivityRow extends ActivityInput {
+  hidden?: boolean
 }
 
-const cloneClass = (): DemandRow[] =>
-  CLASS_DEMAND.map((d, i) => ({ id: `p${i + 1}`, demand: d }))
+const cloneClass = (): ActivityRow[] =>
+  ST_JOHNS.map((a) => ({ ...a, predecessors: [...a.predecessors] }))
 
-/** Next unused row id of the form p1, p2, … */
-function nextRowId(rows: { id: string }[]): string {
-  const used = new Set(rows.map((r) => r.id))
-  let k = 1
-  while (used.has(`p${k}`)) k++
-  return `p${k}`
+function pathLabel(ids: string[]): string {
+  return ['Start', ...ids, 'Finish'].join(' → ')
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  return open ? (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M17.94 17.94A10.5 10.5 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.06-5.94" />
+      <path d="M9.9 4.24A10.9 10.9 0 0 1 12 5c7 0 11 7 11 7a19.8 19.8 0 0 1-3.22 4.31" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  )
 }
 
 const CELL_INPUT =
   'w-full rounded border border-transparent bg-transparent px-1.5 py-0.5 text-sm ' +
   'hover:border-stone-200 focus:border-garnet-400 focus:bg-white focus:outline-none'
 
-const fmt1 = (v: number) => v.toFixed(1)
-const fmtInt = (v: number) => Math.round(v).toLocaleString('en-US')
-
-function TrashIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M3 6h18" />
-      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-      <line x1="10" y1="11" x2="10" y2="17" />
-      <line x1="14" y1="11" x2="14" y2="17" />
-    </svg>
-  )
-}
-
-/** how period t's forecast was computed, spelled out with the numbers */
-function calcText(
-  id: MethodId,
-  t: number,
-  demand: number[],
-  forecasts: (number | null)[],
-  maN: number,
-  alpha: number,
-): string {
-  const f = forecasts[t - 1]!
-  if (id === 'naive') {
-    return `f${t} = d${t - 1} = ${fmtInt(demand[t - 2])}`
-  }
-  if (id === 'ma') {
-    const values = demand.slice(t - 1 - maN, t - 1).map((d) => fmtInt(d))
-    return `f${t} = (${values.join(' + ')}) / ${maN} = ${fmt1(f)}`
-  }
-  if (id === 'es') {
-    if (t === 2) return `f2 = d1 = ${fmtInt(demand[0])}`
-    const previous = forecasts[t - 2]!
-    return `f${t} = ${alpha.toFixed(2)} × ${fmtInt(demand[t - 2])} + ${(1 - alpha).toFixed(2)} × ${fmt1(previous)} = ${fmt1(f)}`
-  }
-  const fit = regressionFit(demand)!
-  return `f${t} = ${fmt1(fit.slope)} × ${t} + ${fmt1(fit.intercept)} = ${fmt1(f)}`
-}
-
-export default function Ch8Forecasting() {
-  const [rows, setRows] = useState<DemandRow[]>(cloneClass)
-  const [enabled, setEnabled] = useState<Record<MethodId, boolean>>({
-    naive: true,
-    ma: true,
-    es: true,
-    regression: true,
-  })
-  const [maN, setMaN] = useState(3)
-  const [alpha, setAlpha] = useState(0.7)
+export default function Ch8ProjectManagement() {
+  const [rows, setRows] = useState<ActivityRow[]>(cloneClass)
+  const [predDrafts, setPredDrafts] = useState<Record<string, string>>({})
   const [showAnswers, setShowAnswers] = useState(true)
-  const [openWork, setOpenWork] = useState<Record<MethodId, boolean>>({
-    naive: false,
-    ma: false,
-    es: false,
-    regression: false,
-  })
-  const [calcFor, setCalcFor] = useState<MethodId | null>(null)
-  const [dataOpen, setDataOpen] = useState(true)
-  const [generator, setGenerator] = useState<GeneratorOptions>({
-    periods: 12,
-    trend: 'up',
-    trendStrength: 25,
-    seasonal: false,
-    seasonLength: 4,
-    variability: 10,
-  })
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const [nodeOverrides, setNodeOverrides] = useState<Record<string, LayoutPoint>>({})
 
   useEffect(() => {
-    if (calcFor === null) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setCalcFor(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [calcFor])
-
-  useEffect(() => {
-    document.title = 'Forecasting · MGSC 395'
+    document.title = 'Project Management · MGSC 395'
     return () => {
       document.title = 'MGSC 395 · Interactive Demos'
     }
   }, [])
 
-  const demand = useMemo(() => rows.map((r) => r.demand), [rows])
-  const T = demand.length
-
-  const methods = useMemo(
+  /** the full project — hiding rows never changes the analysis */
+  const inputs = useMemo<ActivityInput[]>(
     () =>
-      [
-        {
-          id: 'naive' as const,
-          label: 'Naive',
-          color: COLOR_NAIVE,
-          forecasts: naiveForecast(demand),
-        },
-        {
-          id: 'ma' as const,
-          label: `MA(${maN})`,
-          color: COLOR_MA,
-          forecasts: movingAverageForecast(demand, maN),
-        },
-        {
-          id: 'es' as const,
-          label: `ES(α = ${alpha.toFixed(2)})`,
-          color: COLOR_ES,
-          forecasts: expSmoothingForecast(demand, alpha),
-        },
-        {
-          id: 'regression' as const,
-          label: 'Linear regression',
-          color: COLOR_REGRESSION,
-          forecasts: regressionForecast(demand),
-        },
-      ].map((m) => {
-        const work = errorRows(demand, m.forecasts)
-        return { ...m, work, metrics: metricsFrom(work) }
-      }),
-    [demand, maN, alpha],
+      rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        duration: r.duration,
+        predecessors: [...r.predecessors],
+      })),
+    [rows],
   )
 
-  const enabledMethods = methods.filter((m) => enabled[m.id])
+  const schedule = useMemo(() => computeCpm(inputs), [inputs])
 
-  const chartSeries: ChartSeries[] = showAnswers ? enabledMethods : []
+  const hiddenIds = useMemo(
+    () => new Set(rows.filter((r) => r.hidden).map((r) => r.id)),
+    [rows],
+  )
 
-  /** the lowest value per metric column, for bolding */
-  const best = useMemo(() => {
-    const pick = (get: (m: Metrics) => number | null) => {
-      let min = Infinity
-      for (const m of enabledMethods) {
-        const v = m.metrics ? get(m.metrics) : null
-        if (v !== null && v < min) min = v
-      }
-      return min
-    }
-    return {
-      mad: pick((m) => m.mad),
-      mse: pick((m) => m.mse),
-      mape: pick((m) => m.mape),
-    }
-  }, [enabledMethods])
-
-  // ── demand editing ──────────────────────────────────────
-  const setDemand = (id: string, value: number) => {
-    if (!Number.isFinite(value)) return
-    setRows((list) =>
-      list.map((r) =>
-        r.id === id ? { ...r, demand: Math.max(0, Math.round(value)) } : r,
-      ),
-    )
+  // ── row editing ─────────────────────────────────────────
+  const patchRow = (id: string, patch: Partial<ActivityRow>) => {
+    setRows((list) => list.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   }
+
+  const setDuration = (id: string, value: number) => {
+    if (!Number.isFinite(value)) return
+    patchRow(id, {
+      duration: Math.min(MAX_DUR, Math.max(MIN_DUR, Math.round(value))),
+    })
+  }
+
+  /** parse a typed predecessor list; returns null when any token is not an
+   *  existing letter, is the row itself, or would create a cycle */
+  const parsePreds = (id: string, text: string): string[] | null => {
+    const tokens = [...new Set(
+      text.toUpperCase().split(/[,\s]+/).filter(Boolean),
+    )]
+    const blocked = descendantsOf(rows, id)
+    for (const t of tokens) {
+      if (t === id) return null
+      if (!rows.some((r) => r.id === t)) return null
+      if (blocked.has(t)) return null
+    }
+    return tokens.sort()
+  }
+
+  const onPredsChange = (id: string, text: string) => {
+    setPredDrafts((d) => ({ ...d, [id]: text }))
+    const parsed = parsePreds(id, text)
+    if (parsed) patchRow(id, { predecessors: parsed })
+  }
+
+  const onPredsBlur = (id: string) => {
+    setPredDrafts((d) => {
+      const { [id]: _, ...rest } = d
+      return rest
+    })
+  }
+
+  const toggleHidden = (id: string) => {
+    setRows((list) => list.map((r) => (r.id === id ? { ...r, hidden: !r.hidden } : r)))
+  }
+
   const deleteRow = (id: string) => {
     setRows((list) =>
-      list.length > MIN_PERIODS ? list.filter((r) => r.id !== id) : list,
-    )
-  }
-  const addRow = () => {
-    setRows((list) =>
-      list.length < MAX_PERIODS
-        ? [...list, { id: nextRowId(list), demand: list[list.length - 1]?.demand ?? 100 }]
-        : list,
+      list
+        .filter((r) => r.id !== id)
+        .map((r) => ({ ...r, predecessors: r.predecessors.filter((p) => p !== id) })),
     )
   }
 
-  // ── practice toolbar ────────────────────────────────────
-  const isClassData =
-    rows.length === CLASS_DEMAND.length &&
-    CLASS_DEMAND.every((d, i) => rows[i].demand === d)
+  const addRow = () => {
+    setRows((list) => {
+      const id = nextActivityId(list)
+      if (!id) return list
+      return [...list, { id, name: '', predecessors: [], duration: 5 }]
+    })
+  }
+
+  const showAllRows = () => {
+    setRows((list) => list.map((r) => ({ ...r, hidden: false })))
+  }
+
+  const hideAllRows = () => {
+    setRows((list) => list.map((r) => ({ ...r, hidden: true })))
+  }
+
+  const pathKey = (ids: string[]) => ids.join('-')
+
+  const togglePath = (key: string) => {
+    setSelectedPaths((s) => {
+      const next = new Set(s)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  /** union of activity ids on the currently selected (and existing) paths */
+  const selectedIds = useMemo(() => {
+    const out = new Set<string>()
+    for (const p of schedule.paths) {
+      if (selectedPaths.has(pathKey(p.ids))) for (const id of p.ids) out.add(id)
+    }
+    return out
+  }, [schedule, selectedPaths])
+
+  const showOnlySelected = () => {
+    if (selectedIds.size === 0) return
+    setRows((list) =>
+      list.map((r) => ({ ...r, hidden: !selectedIds.has(r.id) })),
+    )
+  }
+
+  /** highlight for the activities table, driven by selected paths */
+  const rowHighlight = useMemo(() => {
+    const out: Record<string, 'critical' | 'plain'> = {}
+    for (const p of schedule.paths) {
+      if (!selectedPaths.has(pathKey(p.ids))) continue
+      for (const id of p.ids) {
+        if (p.critical) out[id] = 'critical'
+        else out[id] ??= 'plain'
+      }
+    }
+    return out
+  }, [schedule, selectedPaths])
 
   const backToClass = () => {
     setRows(cloneClass())
+    setPredDrafts({})
+    setSelectedPaths(new Set())
+    setNodeOverrides({})
   }
+
   const makeRandom = () => {
-    setRows(randomDemand().map((d, i) => ({ id: `r${i + 1}`, demand: d })))
+    setRows(randomProject())
+    setPredDrafts({})
+    setSelectedPaths(new Set())
+    setNodeOverrides({})
     setShowAnswers(false)
   }
 
-  const toggleMethod = (id: MethodId) => {
-    setEnabled((e) => ({ ...e, [id]: !e[id] }))
-  }
-  const toggleWork = (id: MethodId) => {
-    setOpenWork((w) => ({ ...w, [id]: !w[id] }))
+  const moveNode = (id: string, pos: LayoutPoint) => {
+    setNodeOverrides((o) => ({ ...o, [id]: pos }))
   }
 
-  const generate = () => {
-    setRows(generateDemand(generator).map((d, i) => ({ id: `g${i + 1}`, demand: d })))
-  }
+  const anyHidden = rows.some((r) => r.hidden)
+  // hiding is a view setting, so it doesn't disqualify the class plan
+  const isClassPlan =
+    rows.length === ST_JOHNS.length &&
+    ST_JOHNS.every((c) => {
+      const r = rows.find((x) => x.id === c.id)
+      return (
+        r !== undefined &&
+        r.name === c.name &&
+        r.duration === c.duration &&
+        [...r.predecessors].sort().join() === [...c.predecessors].sort().join()
+      )
+    })
 
-  const downloadCsv = () => {
-    const lines = ['Period,Demand', ...rows.map((r, i) => `${i + 1},${r.demand}`)]
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'demand.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+  const maxPathTime = Math.max(...schedule.paths.map((p) => p.duration), 1)
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <DemoHeader label="Chapter 8 · Forecasting" title="Four Forecasts, Live">
-        The demand series from class — edit it, overlay the four forecasting
-        methods, and compare their accuracy with MAD, MSE, and MAPE. Or hide
-        the answers and practice on a random problem.
+      <DemoHeader
+        label="Chapter 8 · Project Management"
+        title="The Critical Path, Live"
+      >
+        The St. John&rsquo;s Hospital project from class — but editable.
+        Click any cell in the table to change it and watch the forward pass,
+        backward pass, slack, and the critical path recompute instantly. Or
+        hide the answers, generate a random project, and fill in the boxes
+        yourself.
       </DemoHeader>
 
       {/* Practice toolbar */}
@@ -275,602 +260,467 @@ export default function Ch8Forecasting() {
         </button>
         <button
           onClick={backToClass}
-          disabled={isClassData}
+          disabled={isClassPlan}
           className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
         >
-          Back to class data
+          Back to class project
         </button>
       </div>
 
-      {/* Data-generating process — where the data comes from */}
+      {/* Activity table editor */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-3 text-lg font-semibold text-stone-900">
-          Generate demand data
-        </h2>
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-              Periods
-            </span>
-            <input
-              type="number"
-              min={MIN_PERIODS}
-              max={MAX_PERIODS}
-              value={generator.periods}
-              onChange={(e) => {
-                const v = Math.round(Number(e.target.value))
-                if (Number.isFinite(v))
-                  setGenerator((g) => ({
-                    ...g,
-                    periods: Math.min(MAX_PERIODS, Math.max(MIN_PERIODS, v)),
-                  }))
-              }}
-              className="w-20 rounded border border-stone-300 bg-white px-2 py-1.5 text-sm tabular-nums focus:border-garnet-400 focus:outline-none"
-            />
-          </label>
-          <div>
-            <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-              Trend
-            </span>
-            <div className="flex overflow-hidden rounded-lg border border-stone-300 text-sm">
-              {(
-                [
-                  ['none', 'None'],
-                  ['up', 'Increasing'],
-                  ['down', 'Decreasing'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  onClick={() => setGenerator((g) => ({ ...g, trend: value }))}
-                  aria-pressed={generator.trend === value}
-                  className={
-                    generator.trend === value
-                      ? 'bg-garnet-800 px-3 py-1.5 font-medium text-white'
-                      : 'bg-white px-3 py-1.5 text-stone-700 hover:bg-stone-50'
-                  }
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-              Trend strength
-            </span>
-            <span className="flex items-center gap-2">
-              <input
-                type="range"
-                min={5}
-                max={60}
-                step={5}
-                value={generator.trendStrength}
-                disabled={generator.trend === 'none'}
-                onChange={(e) =>
-                  setGenerator((g) => ({ ...g, trendStrength: Number(e.target.value) }))
-                }
-                className="w-28 accent-garnet-700 disabled:opacity-40"
-              />
-              <span
-                className={`w-24 text-sm tabular-nums ${generator.trend === 'none' ? 'text-stone-400' : 'text-stone-600'}`}
-              >
-                {generator.trendStrength} / period
-              </span>
-            </span>
-          </label>
-          <div>
-            <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-              Seasonality
-            </span>
-            <button
-              onClick={() => setGenerator((g) => ({ ...g, seasonal: !g.seasonal }))}
-              aria-pressed={generator.seasonal}
-              className={
-                generator.seasonal
-                  ? 'rounded-lg bg-garnet-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-garnet-700'
-                  : 'rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50'
-              }
-            >
-              {generator.seasonal ? 'On' : 'Off'}
-            </button>
-          </div>
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-              Cycle length
-            </span>
-            <input
-              type="number"
-              min={2}
-              max={12}
-              value={generator.seasonLength}
-              disabled={!generator.seasonal}
-              onChange={(e) => {
-                const v = Math.round(Number(e.target.value))
-                if (Number.isFinite(v))
-                  setGenerator((g) => ({
-                    ...g,
-                    seasonLength: Math.min(12, Math.max(2, v)),
-                  }))
-              }}
-              className="w-20 rounded border border-stone-300 bg-white px-2 py-1.5 text-sm tabular-nums focus:border-garnet-400 focus:outline-none disabled:opacity-40"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-stone-500 uppercase">
-              Variability
-            </span>
-            <span className="flex items-center gap-2">
-              <input
-                type="range"
-                min={0}
-                max={40}
-                step={5}
-                value={generator.variability}
-                onChange={(e) =>
-                  setGenerator((g) => ({ ...g, variability: Number(e.target.value) }))
-                }
-                className="w-28 accent-garnet-700"
-              />
-              <span className="w-14 text-sm text-stone-600 tabular-nums">
-                ± {generator.variability}%
-              </span>
-            </span>
-          </label>
-          <button
-            onClick={generate}
-            className="rounded-lg bg-garnet-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-garnet-700"
-          >
-            Generate data
-          </button>
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold text-stone-900">
+            The activities
+          </h2>
+          <p className="max-w-3xl text-sm text-stone-600">
+            Click a cell and type — descriptions, durations, and predecessors
+            (letters separated by commas). The eye hides an activity from the
+            network diagram (calculations keep it); the{' '}
+            <span
+              className="mx-0.5 inline-block h-2 w-2 rounded-full align-middle"
+              style={{ backgroundColor: COLOR_CRITICAL }}
+            />{' '}
+            dot marks the critical path.
+          </p>
         </div>
-      </div>
-
-      {/* Demand table editor */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className={dataOpen ? 'mb-3 flex items-start justify-between gap-3' : 'flex items-start justify-between gap-3'}>
-          <div>
-            <h2 className="text-lg font-semibold text-stone-900">The demand</h2>
-            <p className="text-sm text-stone-600">
-              {dataOpen
-                ? 'Click a cell to edit — everything recomputes as you type.'
-                : `${rows.length} periods`}
-            </p>
-          </div>
-          <button
-            onClick={() => setDataOpen((v) => !v)}
-            aria-expanded={dataOpen}
-            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
-          >
-            {dataOpen ? 'Collapse' : 'Expand'}
-          </button>
-        </div>
-        {dataOpen && (
-        <>
         <div className="overflow-x-auto">
-          <table className="w-full max-w-xs min-w-56 text-sm">
+          <table className="w-full min-w-130 text-sm">
             <thead>
               <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                <th className="w-20 py-2 pr-2 font-semibold">Period</th>
-                <th className="w-32 py-2 pr-2 font-semibold">Demand</th>
+                <th className="w-9 py-2" aria-label="Visibility" />
+                <th className="w-16 py-2 pr-2 font-semibold">Activity</th>
+                <th className="py-2 pr-2 font-semibold">Description</th>
+                <th className="w-28 py-2 pr-2 font-semibold">Duration (wks)</th>
+                <th className="w-40 py-2 pr-2 font-semibold">Predecessor(s)</th>
                 <th className="w-9 py-2" aria-label="Delete row" />
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.id} className="border-b border-stone-100 last:border-0">
-                  <td className="py-1 pr-2 font-semibold text-stone-800 tabular-nums">
-                    {i + 1}
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step={10}
-                      value={r.demand}
-                      onChange={(e) => setDemand(r.id, Number(e.target.value))}
-                      aria-label={`Demand for period ${i + 1}`}
-                      className={`${CELL_INPUT} tabular-nums`}
-                    />
-                  </td>
-                  <td className="py-1">
-                    <button
-                      onClick={() => deleteRow(r.id)}
-                      disabled={rows.length <= MIN_PERIODS}
-                      title={
-                        rows.length <= MIN_PERIODS
-                          ? `Keep at least ${MIN_PERIODS} periods`
-                          : `Delete period ${i + 1}`
-                      }
-                      aria-label={`Delete period ${i + 1}`}
-                      className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-stone-400"
-                    >
-                      <TrashIcon />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const scheduled = schedule.byId[r.id]
+                const critical = showAnswers && !!scheduled?.critical
+                const draft = predDrafts[r.id]
+                const predText = draft ?? r.predecessors.join(', ')
+                const predInvalid =
+                  draft !== undefined && parsePreds(r.id, draft) === null
+                const highlight = showAnswers ? rowHighlight[r.id] : undefined
+                return (
+                  <tr
+                    key={r.id}
+                    className={[
+                      'border-b border-stone-100 last:border-0',
+                      r.hidden ? 'opacity-45' : '',
+                      highlight === 'critical'
+                        ? 'bg-garnet-50/60'
+                        : highlight === 'plain'
+                          ? 'bg-stone-100'
+                          : '',
+                    ].join(' ')}
+                  >
+                    <td className="py-1">
+                      <button
+                        onClick={() => toggleHidden(r.id)}
+                        title={
+                          r.hidden
+                            ? `Show ${r.id} in the network diagram again`
+                            : `Hide ${r.id} from the network diagram (calculations keep it)`
+                        }
+                        aria-label={r.hidden ? `Show activity ${r.id}` : `Hide activity ${r.id}`}
+                        className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+                      >
+                        <EyeIcon open={!r.hidden} />
+                      </button>
+                    </td>
+                    <td className="py-1 pr-2">
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className="inline-block h-2 w-2 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor: critical ? COLOR_CRITICAL : 'white',
+                            border: critical ? 'none' : `1.5px solid ${COLOR_MUTED}`,
+                          }}
+                        />
+                        <span className="font-semibold text-stone-800">{r.id}</span>
+                      </span>
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input
+                        type="text"
+                        value={r.name}
+                        placeholder="(description)"
+                        onChange={(e) => patchRow(r.id, { name: e.target.value })}
+                        aria-label={`Description for activity ${r.id}`}
+                        className={CELL_INPUT}
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input
+                        type="number"
+                        min={MIN_DUR}
+                        max={MAX_DUR}
+                        value={r.duration}
+                        onChange={(e) => setDuration(r.id, Number(e.target.value))}
+                        aria-label={`Duration for activity ${r.id}, weeks`}
+                        className={`${CELL_INPUT} tabular-nums`}
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input
+                        type="text"
+                        value={predText}
+                        placeholder="— (starts at Start)"
+                        onChange={(e) => onPredsChange(r.id, e.target.value)}
+                        onBlur={() => onPredsBlur(r.id)}
+                        title={
+                          predInvalid
+                            ? 'Only existing letters, no cycles — e.g. "B, D"'
+                            : 'Letters separated by commas, e.g. "B, D"'
+                        }
+                        aria-label={`Predecessors for activity ${r.id}`}
+                        aria-invalid={predInvalid}
+                        className={[
+                          CELL_INPUT,
+                          predInvalid
+                            ? 'border-red-400 bg-red-50 focus:border-red-500'
+                            : '',
+                        ].join(' ')}
+                      />
+                    </td>
+                    <td className="py-1">
+                      <button
+                        onClick={() => deleteRow(r.id)}
+                        title={`Delete row ${r.id} permanently (use the eye to hide instead)`}
+                        aria-label={`Delete activity ${r.id}`}
+                        className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-700"
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            onClick={addRow}
-            disabled={rows.length >= MAX_PERIODS}
-            className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-40"
-          >
-            + Add row
-          </button>
-          <button
-            onClick={downloadCsv}
-            disabled={rows.length === 0}
-            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-          >
-            Download CSV
-          </button>
-        </div>
-        </>
-        )}
-      </div>
-
-      {/* The chart — the hero */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-2 text-lg font-semibold text-stone-900">
-          The forecasts
-        </h2>
-        <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {methods.map((m) => (
-            <div
-              key={m.id}
-              className="flex flex-col gap-2 rounded-lg border border-stone-200 p-3"
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={addRow}
+              disabled={rows.length >= 26}
+              className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-40"
             >
-              <button
-                onClick={() => toggleMethod(m.id)}
-                aria-pressed={enabled[m.id]}
-                className={
-                  enabled[m.id]
-                    ? 'flex items-center gap-1.5 self-start rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-800 hover:bg-stone-50'
-                    : 'flex items-center gap-1.5 self-start rounded-lg border border-stone-200 bg-stone-100 px-3 py-1.5 text-sm font-medium text-stone-400 hover:bg-stone-50'
-                }
-              >
-                <span
-                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={
-                    enabled[m.id]
-                      ? { backgroundColor: m.color }
-                      : { border: '1.5px solid #a8a29e' }
-                  }
-                />
-                {m.id === 'ma' ? `MA(${maN})` : m.id === 'es' ? 'ES(α)' : m.label}
-              </button>
-              <div className="flex h-8 items-center gap-2">
-                {m.id === 'ma' && (
-                  <>
-                    <span className="text-sm text-stone-600">n =</span>
-                    <input
-                      type="number"
-                      min={MIN_MA_N}
-                      max={MAX_MA_N}
-                      value={maN}
-                      disabled={!enabled.ma}
-                      onChange={(e) => {
-                        const v = Math.round(Number(e.target.value))
-                        if (Number.isFinite(v))
-                          setMaN(Math.min(MAX_MA_N, Math.max(MIN_MA_N, v)))
-                      }}
-                      aria-label="Moving-average window n"
-                      className="w-16 rounded border border-stone-200 bg-white px-1.5 py-1 text-sm tabular-nums focus:border-garnet-400 focus:outline-none disabled:opacity-40"
-                    />
-                  </>
-                )}
-                {m.id === 'es' && (
-                  <>
-                    <input
-                      type="range"
-                      min={MIN_ALPHA}
-                      max={MAX_ALPHA}
-                      step={0.05}
-                      value={alpha}
-                      disabled={!enabled.es}
-                      onChange={(e) => setAlpha(Number(e.target.value))}
-                      aria-label="Smoothing constant alpha"
-                      className="min-w-0 flex-1 accent-garnet-700 disabled:opacity-40"
-                    />
-                    <span className="w-16 shrink-0 text-sm text-stone-600 tabular-nums">
-                      α = {alpha.toFixed(2)}
-                    </span>
-                  </>
-                )}
-              </div>
-              {showAnswers && (
-                <button
-                  onClick={() => setCalcFor(m.id)}
-                  aria-haspopup="dialog"
-                  disabled={!enabled[m.id]}
-                  className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-                >
-                  Show calculations
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        <ForecastChart demand={demand} series={chartSeries} />
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
-          <button
-            onClick={() => void downloadWorksheet(demand, { alpha })}
-            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
-          >
-            Create worksheet (PDF)
-          </button>
-          <button
-            onClick={() => void downloadWorksheet(demand, { alpha, solution: true })}
-            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
-          >
-            Create solutions (PDF)
-          </button>
-          <span className="text-xs text-stone-500">
-            Both use this exact problem — Naive, MA(3), ES(α ={' '}
-            {alpha.toFixed(2)}), and regression columns.
-          </span>
-        </div>
-      </div>
-
-      {/* Error metrics */}
-      {showAnswers && (
-        <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-          <h2 className="mb-1 text-lg font-semibold text-stone-900">
-            Forecast accuracy
-          </h2>
-          <p className="mb-3 text-sm text-stone-600 tabular-nums">
-            Eₜ = fₜ − dₜ · lower is better — the best in each column is bold.
-          </p>
-          {enabledMethods.length === 0 ? (
-            <p className="py-4 text-center text-sm text-stone-500">
-              No methods enabled — toggle one on above.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-130 text-sm">
-                <thead>
-                  <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                    <th className="py-2 pr-3 font-semibold">Method</th>
-                    <th className="py-2 pr-3 text-right font-semibold">
-                      Next forecast (f<sub>{T + 1}</sub>)
-                    </th>
-                    <th className="py-2 pr-3 text-right font-semibold">MAD</th>
-                    <th className="py-2 pr-3 text-right font-semibold">MSE</th>
-                    <th className="py-2 pr-3 text-right font-semibold">MAPE</th>
-                    <th className="w-32 py-2" aria-label="Show the work" />
-                  </tr>
-                </thead>
-                <tbody className="tabular-nums">
-                  {enabledMethods.map((m) => {
-                    const next = m.forecasts[T]
-                    const mt = m.metrics
-                    return (
-                      <MetricRows
-                        key={m.id}
-                        label={m.label}
-                        color={m.color}
-                        next={next ?? null}
-                        metrics={mt}
-                        work={m.work}
-                        best={best}
-                        open={openWork[m.id]}
-                        onToggle={() => toggleWork(m.id)}
-                      />
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+              + Add row
+            </button>
+            <button
+              onClick={showAllRows}
+              disabled={!anyHidden}
+              className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+            >
+              Show all
+            </button>
+            <button
+              onClick={hideAllRows}
+              disabled={rows.length === 0}
+              className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+            >
+              Hide all
+            </button>
+            <button
+              onClick={showOnlySelected}
+              disabled={selectedIds.size === 0}
+              title={
+                selectedIds.size === 0
+                  ? 'Click one or more paths below first'
+                  : 'Show only the activities on the selected paths in the network diagram'
+              }
+              className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+            >
+              Show only those selected
+            </button>
+          </div>
+          {anyHidden && (
+            <span className="text-xs text-stone-500">
+              {rows.filter((r) => r.hidden).length} hidden from the network
+              diagram — calculations still include them.
+            </span>
           )}
         </div>
-      )}
+      </div>
 
-      {/* Calculations pop-up */}
-      {showAnswers &&
-        calcFor !== null &&
-        (() => {
-          const m = methods.find((x) => x.id === calcFor)
-          if (!m) return null
-          return (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 p-4"
-              onClick={() => setCalcFor(null)}
-            >
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-label={`${m.label} calculations`}
-                onClick={(e) => e.stopPropagation()}
-                className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl bg-white shadow-2xl"
-              >
-                <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-3">
-                  <div className="flex items-center gap-1.5 text-sm font-semibold text-stone-800">
-                    <span
-                      className="inline-block h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: m.color }}
-                    />
-                    {m.label} — calculations
-                  </div>
-                  <button
-                    onClick={() => setCalcFor(null)}
-                    aria-label="Close"
-                    className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="h-4 w-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      aria-hidden
-                    >
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-                <div className="overflow-y-auto px-4 py-3">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                        <th className="w-24 py-1.5 pr-3 font-semibold">Period</th>
-                        <th className="py-1.5 font-semibold">Calculation</th>
-                      </tr>
-                    </thead>
-                    <tbody className="tabular-nums">
-                      {Array.from({ length: T + 1 }, (_, i) => i + 1)
-                        .filter(
-                          (t) =>
-                            m.forecasts[t - 1] !== null &&
-                            m.forecasts[t - 1] !== undefined,
-                        )
-                        .map((t) => (
-                          <tr
-                            key={t}
-                            className="border-b border-stone-100 last:border-0"
-                          >
-                            <td className="py-1 pr-3 text-stone-700">
-                              {t}
-                              {t === T + 1 && (
-                                <span className="ml-1 text-xs text-stone-400">
-                                  (next)
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-1 text-stone-700">
-                              {calcText(m.id, t, demand, m.forecasts, maN, alpha)}
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
+      {rows.length === 0 ? (
+        <div className="mb-6 rounded-xl border border-stone-200 bg-white p-10 text-center text-sm text-stone-500">
+          No activities yet — add a row to begin.
+        </div>
+      ) : (
+        <>
+          {/* Paths — listed first: you can only spot the critical path after
+              writing down every path */}
+          {showAnswers && (
+            <div className="mb-4 rounded-xl border border-stone-200 bg-white p-5">
+              <h2 className="mb-1 text-lg font-semibold text-stone-900">
+                Every path from Start to Finish
+              </h2>
+              <p className="mb-3 max-w-3xl text-sm text-stone-600">
+                First, list every path and add up its activity times. The
+                slowest path sets the project duration — that is the critical
+                path. Click a path to light up its activities in the table
+                above.
+              </p>
+              <div className="overflow-x-auto">
+                {/* shared column tracks so the letters, sums, pills, and
+                    bars all line up perfectly across rows */}
+                <div className="grid min-w-140 grid-cols-[max-content_max-content_max-content_minmax(6rem,1fr)] gap-y-1">
+                  {schedule.paths.map((p) => {
+                    const key = pathKey(p.ids)
+                    const selected = selectedPaths.has(key)
+                    const mathLabel = p.ids
+                      .map((id) => schedule.byId[id].duration)
+                      .join(' + ')
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => togglePath(key)}
+                        aria-pressed={selected}
+                        className={[
+                          'col-span-4 grid grid-cols-subgrid items-center gap-x-4 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                          selected
+                            ? p.critical
+                              ? 'bg-garnet-50/80'
+                              : 'bg-stone-100'
+                            : 'hover:bg-stone-50',
+                        ].join(' ')}
+                      >
+                        <span
+                          className={
+                            p.critical
+                              ? 'font-semibold text-stone-900'
+                              : 'text-stone-600'
+                          }
+                        >
+                          {p.ids.join('–')}
+                        </span>
+                        <span className="whitespace-nowrap text-stone-600 tabular-nums">
+                          {mathLabel} ={' '}
+                          <strong className="text-stone-900">{p.duration}</strong>{' '}
+                          wks
+                        </span>
+                        <span>
+                          {p.critical && (
+                            <span className="rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800">
+                              critical
+                            </span>
+                          )}
+                        </span>
+                        <span>
+                          <span className="block h-2 w-full rounded-full bg-stone-100">
+                            <span
+                              className="block h-2 rounded-full"
+                              style={{
+                                width: `${(p.duration / maxPathTime) * 100}%`,
+                                backgroundColor: p.critical
+                                  ? COLOR_CRITICAL
+                                  : COLOR_MUTED,
+                              }}
+                            />
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </div>
-          )
-        })()}
+          )}
+
+          {/* Headline result */}
+          <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
+            <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
+              <div>
+                <div className="text-sm font-medium text-stone-600">
+                  Project duration
+                </div>
+                <div className="text-4xl font-bold text-stone-900 tabular-nums">
+                  {showAnswers ? schedule.projectDuration : '?'}
+                  <span className="ml-1.5 text-lg font-normal text-stone-500">
+                    weeks
+                  </span>
+                </div>
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-stone-600">
+                  Critical path{showAnswers && schedule.criticalPaths.length > 1 ? 's' : ''}
+                </div>
+                {showAnswers ? (
+                  <>
+                    {schedule.criticalPaths.map((p) => (
+                      <div
+                        key={p.ids.join('-')}
+                        className="text-base font-semibold text-garnet-800"
+                      >
+                        {pathLabel(p.ids)}
+                      </div>
+                    ))}
+                    {!isClassPlan && (
+                      <div className="mt-1 text-xs text-stone-500">
+                        Class plan: {CLASS_PLAN.projectDuration} weeks via{' '}
+                        {pathLabel(CLASS_PLAN.criticalPaths[0].ids)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-base text-stone-400">
+                    hidden — work it out, then hit &ldquo;Show answers&rdquo;
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Network diagram */}
+          <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
+            <h2 className="mb-3 text-lg font-semibold text-stone-900">
+              The project network
+            </h2>
+            <Network
+              schedule={schedule}
+              hideAnswers={!showAnswers}
+              hiddenIds={hiddenIds}
+              overrides={nodeOverrides}
+              onMove={moveNode}
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
+              <button
+                onClick={() => void downloadWorksheet(inputs, { positions: nodeOverrides })}
+                className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+              >
+                Create worksheet (PDF)
+              </button>
+              <button
+                onClick={() =>
+                  void downloadWorksheet(inputs, {
+                    positions: nodeOverrides,
+                    solution: true,
+                  })
+                }
+                className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+              >
+                Create solutions (PDF)
+              </button>
+              <span className="text-xs text-stone-500">
+                Both use this exact problem — and your arrangement, if you
+                dragged the boxes.
+              </span>
+            </div>
+          </div>
+
+          {/* Schedule table */}
+          <div className="mb-6 overflow-x-auto rounded-xl border border-stone-200 bg-white p-5">
+            <ScheduleTable schedule={schedule} showAnswers={showAnswers} />
+          </div>
+
+          {/* Gantt */}
+          {showAnswers && (
+            <div className="mb-6 rounded-xl border border-stone-200 bg-white p-5">
+              <h2 className="mb-1 text-lg font-semibold text-stone-900">
+                Gantt chart — grab a bar and feel the slack
+              </h2>
+              <p className="mb-3 max-w-3xl text-sm text-stone-600">
+                Every bar starts at its Earliest Start Time. Bars with slack
+                can be dragged anywhere inside their whisker — early, late,
+                anywhere between EST and LFT — without delaying the project.
+                The connectors never break: drag a bar into a neighbor and it
+                shoves that neighbor along, until the whole chain runs out of
+                slack. Critical bars can&rsquo;t move at all; that is what
+                zero slack means.
+              </p>
+              <Gantt schedule={schedule} />
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
 
-function MetricRows({
-  label,
-  color,
-  next,
-  metrics,
-  work,
-  best,
-  open,
-  onToggle,
+function ScheduleTable({
+  schedule,
+  showAnswers,
 }: {
-  label: string
-  color: string
-  next: number | null
-  metrics: Metrics | null
-  work: ErrorRow[]
-  best: { mad: number; mse: number; mape: number }
-  open: boolean
-  onToggle: () => void
+  schedule: ReturnType<typeof computeCpm>
+  showAnswers: boolean
 }) {
-  const bold = (v: number | null, b: number) =>
-    v !== null && Math.abs(v - b) < 1e-9
-      ? 'font-bold text-stone-900'
-      : 'text-stone-700'
   return (
     <>
-      <tr className="border-b border-stone-100">
-        <td className="py-1.5 pr-3">
-          <span className="flex items-center gap-1.5">
-            <span
-              className="inline-block h-2 w-2 shrink-0 rounded-full"
-              style={{ backgroundColor: color }}
-            />
-            <span className="font-medium text-stone-800">{label}</span>
-          </span>
-        </td>
-        <td className="py-1.5 pr-3 text-right text-stone-700">
-          {next !== null ? fmt1(next) : '—'}
-        </td>
-        <td className={`py-1.5 pr-3 text-right ${bold(metrics?.mad ?? null, best.mad)}`}>
-          {metrics ? fmt1(metrics.mad) : '—'}
-        </td>
-        <td className={`py-1.5 pr-3 text-right ${bold(metrics?.mse ?? null, best.mse)}`}>
-          {metrics ? fmtInt(metrics.mse) : '—'}
-        </td>
-        <td
-          className={`py-1.5 pr-3 text-right ${bold(metrics?.mape ?? null, best.mape)}`}
-        >
-          {metrics && metrics.mape !== null ? `${fmt1(metrics.mape)}%` : '—'}
-        </td>
-        <td className="py-1.5 text-right">
-          {metrics ? (
-            <button
-              onClick={onToggle}
-              aria-expanded={open}
-              className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-50"
+      <h2 className="mb-1 text-lg font-semibold text-stone-900">
+        The full schedule
+      </h2>
+      <table className="w-full min-w-105 text-sm">
+        <thead>
+          <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+            <th className="py-2 pr-3 font-semibold">Activity</th>
+            <th className="py-2 pr-3 font-semibold">Preds</th>
+            <th className="py-2 pr-3 text-right font-semibold">Dur</th>
+            <th className="py-2 pr-3 text-right font-semibold">EST</th>
+            <th className="py-2 pr-3 text-right font-semibold">EFT</th>
+            <th className="py-2 pr-3 text-right font-semibold">LST</th>
+            <th className="py-2 pr-3 text-right font-semibold">LFT</th>
+            <th className="py-2 pr-3 text-right font-semibold">Slack</th>
+            <th className="py-2 font-semibold" aria-label="Critical flag" />
+          </tr>
+        </thead>
+        <tbody className="tabular-nums">
+          {schedule.activities.map((a) => (
+            <tr
+              key={a.id}
+              className={[
+                'border-b border-stone-100 last:border-0',
+                showAnswers && a.critical ? 'bg-garnet-50/60' : '',
+              ].join(' ')}
             >
-              {open ? 'Hide the work' : 'Show the work'}
-            </button>
-          ) : null}
-        </td>
-      </tr>
-      {open && metrics && (
-        <tr className="border-b border-stone-100">
-          <td colSpan={6} className="py-3 pl-4">
-            <table className="w-full max-w-xl min-w-100 text-sm">
-              <thead>
-                <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                  <th className="py-1.5 pr-3 font-semibold">Period</th>
-                  <th className="py-1.5 pr-3 text-right font-semibold">Forecast</th>
-                  <th className="py-1.5 pr-3 text-right font-semibold">Demand</th>
-                  <th className="py-1.5 pr-3 text-right font-semibold">|E|</th>
-                  <th className="py-1.5 pr-3 text-right font-semibold">E²</th>
-                  <th className="py-1.5 text-right font-semibold">|E| / d</th>
-                </tr>
-              </thead>
-              <tbody className="tabular-nums">
-                {work.map((r) => (
-                  <tr key={r.period} className="border-b border-stone-100 last:border-0">
-                    <td className="py-1 pr-3 text-stone-700">{r.period}</td>
-                    <td className="py-1 pr-3 text-right text-stone-700">
-                      {fmt1(r.forecast)}
-                    </td>
-                    <td className="py-1 pr-3 text-right text-stone-700">
-                      {r.demand.toLocaleString('en-US')}
-                    </td>
-                    <td className="py-1 pr-3 text-right text-stone-700">
-                      {fmt1(r.absError)}
-                    </td>
-                    <td className="py-1 pr-3 text-right text-stone-700">
-                      {fmtInt(r.sqError)}
-                    </td>
-                    <td className="py-1 text-right text-stone-700">
-                      {r.pctError !== null
-                        ? `${Math.round(r.pctError * 100)}%`
-                        : '—'}
-                    </td>
-                  </tr>
-                ))}
-                <tr className="border-t border-stone-300 font-semibold text-stone-900">
-                  <td className="py-1.5 pr-3" colSpan={3}>
-                    Mean over {metrics.count} period{metrics.count === 1 ? '' : 's'}
+              <td className="max-w-44 py-1.5 pr-3">
+                <span className="font-semibold text-stone-800">{a.id}</span>{' '}
+                {a.name && (
+                  <span className="text-stone-500" title={a.name}>
+                    {a.name.length > 26 ? a.name.slice(0, 25) + '…' : a.name}
+                  </span>
+                )}
+              </td>
+              <td className="py-1.5 pr-3 text-stone-500">
+                {a.predecessors.length > 0 ? a.predecessors.join(', ') : '—'}
+              </td>
+              <td className="py-1.5 pr-3 text-right text-stone-700">{a.duration}</td>
+              {showAnswers ? (
+                <>
+                  <td className="py-1.5 pr-3 text-right text-stone-700">{a.est}</td>
+                  <td className="py-1.5 pr-3 text-right text-stone-700">{a.eft}</td>
+                  <td className="py-1.5 pr-3 text-right text-stone-700">{a.lst}</td>
+                  <td className="py-1.5 pr-3 text-right text-stone-700">{a.lft}</td>
+                  <td className="py-1.5 pr-3 text-right font-medium text-stone-900">
+                    {a.slack}
                   </td>
-                  <td className="py-1.5 pr-3 text-right">{fmt1(metrics.mad)}</td>
-                  <td className="py-1.5 pr-3 text-right">{fmtInt(metrics.mse)}</td>
-                  <td className="py-1.5 text-right">
-                    {metrics.mape !== null ? `${fmt1(metrics.mape)}%` : '—'}
+                  <td className="py-1.5">
+                    {a.critical && (
+                      <span className="rounded-full bg-garnet-100 px-2 py-0.5 text-xs font-medium text-garnet-800">
+                        critical
+                      </span>
+                    )}
                   </td>
-                </tr>
-              </tbody>
-            </table>
-          </td>
-        </tr>
-      )}
+                </>
+              ) : (
+                <>
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <td key={i} className="py-1.5 pr-3">
+                      <div className="ml-auto h-5 w-12 rounded border border-stone-200 bg-stone-50/50" />
+                    </td>
+                  ))}
+                  <td className="py-1.5" />
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </>
   )
 }

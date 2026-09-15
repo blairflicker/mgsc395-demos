@@ -1,7 +1,7 @@
 /**
- * Chapter 9 inventory management (EOQ) — pure computation, no React.
+ * Chapter 10 inventory management (EOQ) — pure computation, no React.
  *
- * Conventions match the Chapter 9 lecture exactly:
+ * Conventions match the Chapter 10 lecture exactly:
  * - The year has WORKING_DAYS = 250 working days (50 weeks × 5 days).
  * - Daily demand d = D / 250.
  * - EOQ: Q* = √(2DS / H).
@@ -31,7 +31,7 @@ export interface Scenario {
   leadTime: number
 }
 
-/** The problem from the Chapter 9 slides. */
+/** The problem from the Chapter 10 slides. */
 export const CLASS_SCENARIO: Scenario = { D: 1000, S: 200, H: 2.5, leadTime: 2 }
 
 /** d = D / 250, units per working day. */

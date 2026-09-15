@@ -1,7 +1,7 @@
 /**
- * Chapter 5 long-term capacity planning — pure computation, no React.
+ * Chapter 6 long-term capacity planning — pure computation, no React.
  *
- * Conventions match the Chapter 5 lecture exactly:
+ * Conventions match the Chapter 6 lecture exactly:
  * - Each machine supplies N = days × shift hours per year; a target
  *   capacity cushion of C percent reserves N·C/100 of those hours, leaving
  *   N·(1 − C/100) that can be counted on.
@@ -41,7 +41,7 @@ export interface CapacityCase {
   cushion: number
 }
 
-/** The copy-center problem from the Chapter 5 slides. */
+/** The copy-center problem from the Chapter 6 slides. */
 export const CLASS_CASE: CapacityCase = {
   products: [
     { id: 'x', name: 'Client X', D: 2000, p: 0.5, Q: 20, s: 0.25 },

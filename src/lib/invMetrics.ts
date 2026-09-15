@@ -1,7 +1,7 @@
 /**
- * Chapter 12 inventory metrics — pure computation, no React.
+ * Chapter 14 inventory metrics — pure computation, no React.
  *
- * Conventions match the Chapter 12 lecture exactly:
+ * Conventions match the Chapter 14 lecture exactly:
  * - Average aggregate inventory value: AAIV = Σ units on hand × value per unit.
  * - Weeks of supply = AAIV / weekly sales at cost, where weekly sales at
  *   cost = annual sales at cost (COGS) / 52.

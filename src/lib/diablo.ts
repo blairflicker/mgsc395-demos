@@ -1,12 +1,12 @@
 /**
- * Chapter 6 — the Diablo Electronics problem, pure computation, no React.
+ * Chapter 7 — the Diablo Electronics problem, pure computation, no React.
  *
  * Four products (A–D) are fabricated and assembled at five workstations,
  * each staffed by one worker (Victor, Wendy, Xavier, Yelena, Zayn) with
  * 2,400 minutes available per week (8 h/day × 5 days, no overtime).
  * Demand exceeds what the plant can make, so a product mix must be chosen.
  *
- * Numbers match the Chapter 6 lecture exactly:
+ * Numbers match the Chapter 7 lecture exactly:
  * - At full demand, Xavier's load is 2,600 min > 2,400 — the bottleneck.
  * - Traditional method (rank by unit margin, B A C D):
  *   60 A, 80 B, 40 C, 100 D → profit $1,560.
