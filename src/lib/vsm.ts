@@ -42,6 +42,8 @@ export interface Scenario {
   shiftHours: number
   /** unpaid lunch/break hours inside the shift */
   lunchHours: number
+  /** how the problem states the breaks, e.g. "two 30-minute lunch breaks" — display only */
+  breaks?: string
   /** units per batch (one setup per batch) */
   batchSize: number
   /** lead time of the raw-material buffer before the first step, days */
@@ -61,6 +63,7 @@ export const CLASS_SCENARIO: Scenario = {
   daysPerWeek: 5,
   shiftHours: 8,
   lunchHours: 1,
+  breaks: 'two 30-minute lunch breaks',
   batchSize: 40,
   rawMaterialDays: 5,
   wipAfterLast: 1475,

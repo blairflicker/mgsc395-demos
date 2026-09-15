@@ -39,6 +39,13 @@ const fmtTakt = (v: number) =>
 const fmtInt = (v: number) => v.toLocaleString('en-US')
 const round1 = (v: number) => Math.round(v * 10) / 10
 
+/** the breaks as the problem states them — the class wording when there is one */
+const breaksText = (sc: Scenario) =>
+  sc.breaks ??
+  (sc.lunchHours === 0.5
+    ? 'a 30-minute lunch break'
+    : `a ${fmt(sc.lunchHours)}-hour lunch break`)
+
 /**
  * The color each step wears right now: neutral until answers are shown,
  * then garnet for the bottleneck and blue / teal / violet for the rest in
@@ -126,6 +133,83 @@ function StepBox({
 }
 
 /**
+ * The problem in the format of the lecture slides, the book, and the
+ * homework: overall attributes, then one row per process step, then a
+ * shipping row for the finished goods. Uptime and operators are fixed in
+ * every problem this course uses, so they are stated, not modeled.
+ */
+function ProblemTable({ sc }: { sc: Scenario }) {
+  const last = sc.steps[sc.steps.length - 1]
+  const th = 'w-44 border border-stone-300 px-3 py-2 text-left font-bold'
+  const td = 'border border-stone-300 px-3 py-2'
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[34rem] border-collapse text-sm text-stone-900 tabular-nums">
+        <tbody>
+          <tr>
+            <th scope="row" className={`${th} align-bottom`}>
+              Overall Process Attributes
+            </th>
+            <td className={`${td} font-semibold`}>
+              <span className="block">
+                Average demand: {fmtInt(sc.weeklyDemand)}/week
+              </span>
+              <span className="block">Batch size: {sc.batchSize}</span>
+              <span className="block">Number of shifts per day: 1</span>
+              <span className="block">
+                Number of operating days per week: {sc.daysPerWeek}
+              </span>
+              <span className="block">
+                Availability: {sc.shiftHours} hours per shift with{' '}
+                {breaksText(sc)}
+              </span>
+            </td>
+          </tr>
+          {sc.steps.map((s, i) => (
+            <tr key={s.id}>
+              <th scope="row" className={`${th} align-top`}>
+                Process Step {i + 1}
+              </th>
+              <td className={`${td} align-top`}>
+                <div className="grid grid-cols-[7.5rem_1fr] gap-x-3">
+                  <span className="font-bold">{s.name}</span>
+                  <span>
+                    <span className="block">Cycle time = {s.cycleSec} seconds</span>
+                    <span className="block">Setup time = {s.setupMin} minutes</span>
+                    <span className="block">Uptime = 100%</span>
+                    <span className="block">Operators = 1</span>
+                    <span className="block">
+                      WIP ={' '}
+                      {i === 0
+                        ? `${fmt(sc.rawMaterialDays)} days of raw material`
+                        : `${fmtInt(s.wipBefore ?? 0)} pieces`}{' '}
+                      (Before {s.name})
+                    </span>
+                  </span>
+                </div>
+              </td>
+            </tr>
+          ))}
+          <tr>
+            <th scope="row" className={`${th} align-top`}>
+              Process Step {sc.steps.length + 1}
+            </th>
+            <td className={`${td} align-top`}>
+              <div className="grid grid-cols-[7.5rem_1fr] gap-x-3">
+                <span className="font-bold">Shipping</span>
+                <span>
+                  WIP = {fmtInt(sc.wipAfterLast)} pieces (After {last.name})
+                </span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/**
  * One worked line: the name, then the formula in words, then the numbers
  * with their units, then the answer — every "=" step spelled out.
  */
@@ -200,6 +284,7 @@ export default function Ch5LeanSystems() {
   const [sc, setSc] = useState<Scenario>(CLASS_SCENARIO)
   const [isClass, setIsClass] = useState(true)
   const [showAnswers, setShowAnswers] = useState(true)
+  const [showTable, setShowTable] = useState(false)
 
   useEffect(() => {
     document.title = 'Lean Systems · MGSC 395'
@@ -220,7 +305,9 @@ export default function Ch5LeanSystems() {
   const anySetups = sc.steps.some((s) => s.setupMin > 0)
   const keepsUp = cap >= daily
   const colors = stepColors(sc, bn, showAnswers)
-  /** all bars and the takt line share this scale, from zero */
+  /** all bars and the takt line share this scale, from zero — the same in
+   *  both modes, so on reveal the bars grow by their setup share instead
+   *  of rescaling */
   const scaleMax =
     Math.max(takt, ...sc.steps.map((s) => perUnitSec(s, sc.batchSize))) * 1.08
 
@@ -352,32 +439,54 @@ export default function Ch5LeanSystems() {
         </button>
       </div>
 
-      {/* The line — read-only givens */}
+      {/* The problem — the givens, with the slide-format table on request */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-1 text-lg font-semibold text-stone-900">The line</h2>
-        <p className="mb-4 text-sm text-stone-600">
-          The givens, the process chain, and how long one piece waits versus
-          works on its way through.
-        </p>
-        <div className="mb-5 flex flex-wrap items-end gap-x-6 gap-y-3 tabular-nums">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-stone-900">The problem</h2>
+          <button
+            onClick={() => setShowTable((v) => !v)}
+            aria-pressed={showTable}
+            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+          >
+            {showTable ? 'Hide table' : 'View table'}
+          </button>
+        </div>
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 tabular-nums">
           {(
             [
               ['Weekly', 'demand', `${fmtInt(sc.weeklyDemand)} pieces`],
-              ['Work', 'days', `${sc.daysPerWeek}/wk`],
-              ['', 'Shift', `${sc.shiftHours} h − ${fmt(sc.lunchHours)} h lunch`],
-              ['Available', 'time', `${fmtInt(avail)} s/day`],
               ['Batch', 'size', `${sc.batchSize} pieces`],
+              ['Shifts', 'per day', '1'],
+              ['Work', 'days', `${sc.daysPerWeek}/wk`],
+              ['Shift', 'length', `${sc.shiftHours} h − ${fmt(sc.lunchHours)} h lunch`],
             ] as const
           ).map(([top, bottom, value]) => (
             <span key={bottom}>
               <span className="flex h-8 flex-col justify-end text-xs leading-4 font-semibold text-stone-500 uppercase">
-                {top !== '' && <span>{top}</span>}
+                <span>{top}</span>
                 <span>{bottom}</span>
               </span>
               <span className="text-lg text-stone-700">{value}</span>
             </span>
           ))}
         </div>
+        {showTable && (
+          <div className="mt-4 border-t border-stone-100 pt-4">
+            <p className="mb-2 text-xs text-stone-500">
+              As the slides, the book, and the homework state it.
+            </p>
+            <ProblemTable sc={sc} />
+          </div>
+        )}
+      </div>
+
+      {/* The line — the chain and the lead-time ladder */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <h2 className="mb-1 text-lg font-semibold text-stone-900">The line</h2>
+        <p className="mb-4 text-sm text-stone-600">
+          The process chain, and how long one piece waits versus works on its
+          way through.
+        </p>
 
         {/* the line diagram: process chain on top, lead-time ladder beneath,
             one shared column per buffer, arrow, and step */}
@@ -456,7 +565,9 @@ export default function Ch5LeanSystems() {
         </div>
       </div>
 
-      {/* One cycle — time per piece at each step against takt */}
+      {/* One cycle — time per piece at each step against takt. With answers
+          hidden, only the given cycle times are drawn: the setup share and
+          the takt line are the student's to work out. */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold text-stone-900">One cycle</h2>
@@ -468,7 +579,7 @@ export default function Ch5LeanSystems() {
               />
               cycle time
             </span>
-            {anySetups && (
+            {showAnswers && anySetups && (
               <span className="flex items-center gap-1.5">
                 <span
                   className="inline-block h-2.5 w-4 rounded-sm"
@@ -477,10 +588,12 @@ export default function Ch5LeanSystems() {
                 setup share per piece
               </span>
             )}
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-0 border-l-2 border-dashed border-stone-500" />
-              takt
-            </span>
+            {showAnswers && (
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-0 border-l-2 border-dashed border-stone-500" />
+                takt
+              </span>
+            )}
           </div>
         </div>
         <p className="mb-4 text-sm text-stone-600">
@@ -508,6 +621,9 @@ export default function Ch5LeanSystems() {
             const isBn = showAnswers && s.id === bn.id
             const setupShare = (s.setupMin * 60) / sc.batchSize
             const color = colors[s.id]
+            /** the bar shows the whole per-piece time once revealed, only the
+             *  given cycle time before that */
+            const drawn = showAnswers ? per : s.cycleSec
             return (
               <div
                 key={s.id}
@@ -529,16 +645,16 @@ export default function Ch5LeanSystems() {
                 <div className="relative h-6">
                   <div
                     className="flex h-full gap-[2px] overflow-hidden rounded-r"
-                    style={{ width: `${(per / scaleMax) * 100}%` }}
+                    style={{ width: `${(drawn / scaleMax) * 100}%` }}
                   >
                     <div
                       title={`${s.name} — cycle time: ${s.cycleSec} s per piece`}
                       style={{
-                        width: `${(s.cycleSec / per) * 100}%`,
+                        width: `${(s.cycleSec / drawn) * 100}%`,
                         backgroundColor: color,
                       }}
                     />
-                    {s.setupMin > 0 && (
+                    {showAnswers && s.setupMin > 0 && (
                       <div
                         title={`${s.name} — setup share: ${fmt(setupShare)} s per piece`}
                         style={{
@@ -548,10 +664,12 @@ export default function Ch5LeanSystems() {
                       />
                     )}
                   </div>
-                  <div
-                    className="absolute inset-y-0 w-0 border-l-2 border-dashed border-stone-500"
-                    style={{ left: `${(takt / scaleMax) * 100}%` }}
-                  />
+                  {showAnswers && (
+                    <div
+                      className="absolute inset-y-0 w-0 border-l-2 border-dashed border-stone-500"
+                      style={{ left: `${(takt / scaleMax) * 100}%` }}
+                    />
+                  )}
                 </div>
                 <span className="text-right text-xs font-semibold text-stone-700 tabular-nums">
                   {showAnswers ? `${fmt(per)} s/pc` : ''}
