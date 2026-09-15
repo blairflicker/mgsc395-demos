@@ -60,12 +60,23 @@ function stepColors(
   return out
 }
 
-/** a colored dot that ties a name or a calculation line to its chart color */
+/** a colored dot that ties a name or a calculation line to its step */
 const Dot = ({ color }: { color: string }) => (
   <span
     className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle"
     style={{ backgroundColor: color }}
   />
+)
+
+/** a small triangle that marks a buffer — the same mark as the chain */
+const Tri = ({ color }: { color: string }) => (
+  <span
+    aria-hidden
+    className="mr-1.5 inline-block text-[11px] leading-none align-middle"
+    style={{ color }}
+  >
+    ▲
+  </span>
 )
 
 /** amber VSM inventory triangle with its quantity */
@@ -119,7 +130,7 @@ function StepBox({
  * with their units, then the answer — every "=" step spelled out.
  */
 function Calc({
-  dot,
+  mark,
   name,
   formula,
   work,
@@ -127,7 +138,7 @@ function Calc({
   resultSign = '=',
   note,
 }: {
-  dot?: string
+  mark?: React.ReactNode
   name: React.ReactNode
   formula?: string
   work?: React.ReactNode | React.ReactNode[]
@@ -139,7 +150,7 @@ function Calc({
   return (
     <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-[13rem_1fr]">
       <span className="font-medium text-stone-900">
-        {dot && <Dot color={dot} />}
+        {mark}
         {name}
       </span>
       <span className="text-stone-700">
@@ -173,6 +184,17 @@ function CalcGroup({
     </div>
   )
 }
+
+/**
+ * One column of the line diagram. The process chain and the lead-time
+ * ladder share these columns, so a step's box and its lowered rung are
+ * exactly the same width and each buffer sits directly over its raised
+ * rung; the raised line simply continues under the arrows.
+ */
+type Col =
+  | { kind: 'buffer'; key: string; value: string; sub: string; days: string; hidden: boolean }
+  | { kind: 'step'; key: string; step: Step; color: string; isBottleneck: boolean }
+  | { kind: 'arrow'; key: string }
 
 export default function Ch5LeanSystems() {
   const [sc, setSc] = useState<Scenario>(CLASS_SCENARIO)
@@ -214,35 +236,50 @@ export default function Ch5LeanSystems() {
     setShowAnswers(false)
   }
 
-  // ladder segments, in flow order: wait, work, wait, work, …, wait
-  const ladder: {
-    key: string
-    kind: 'wait' | 'work'
-    label: string
-    color: string
-    hidden?: boolean
-  }[] = []
-  ladder.push({
-    key: 'raw',
-    kind: 'wait',
-    label: `${fmt(sc.rawMaterialDays)} days`,
-    color: AMBER,
-  })
+  // the line diagram's columns, in flow order: buffer, arrow, step, arrow, …, buffer
+  const cols: Col[] = [
+    {
+      kind: 'buffer',
+      key: 'raw',
+      value: `${fmt(sc.rawMaterialDays)} days`,
+      sub: 'raw material',
+      days: `${fmt(sc.rawMaterialDays)} days`,
+      hidden: false,
+    },
+  ]
   sc.steps.forEach((s, i) => {
-    ladder.push({
-      key: `${s.id}w`,
-      kind: 'work',
-      label: `${s.cycleSec} s`,
+    const last = i === sc.steps.length - 1
+    cols.push({ kind: 'arrow', key: `${s.id}-in` })
+    cols.push({
+      kind: 'step',
+      key: s.id,
+      step: s,
       color: colors[s.id],
+      isBottleneck: showAnswers && s.id === bn.id,
     })
-    ladder.push({
-      key: `${s.id}b`,
-      kind: 'wait',
-      label: `${fmt(round1(segments[i + 1]))} days`,
-      color: AMBER,
+    cols.push({ kind: 'arrow', key: `${s.id}-out` })
+    cols.push({
+      kind: 'buffer',
+      key: `${s.id}-buffer`,
+      value: last
+        ? `${fmtInt(sc.wipAfterLast)} pcs`
+        : `${fmtInt(sc.steps[i + 1].wipBefore ?? 0)} pcs`,
+      sub: last ? 'to ship' : 'waiting',
+      days: `${fmt(round1(segments[i + 1]))} days`,
       hidden: !showAnswers, // computed from WIP — practice material
     })
   })
+  /** boxes and buffers grow to fill the width; arrows and the totals don't */
+  const gridTemplateColumns = [
+    ...cols.map((c) =>
+      c.kind === 'arrow'
+        ? 'max-content'
+        : c.kind === 'step'
+          ? 'minmax(max-content, 1.4fr)'
+          : 'minmax(max-content, 1fr)',
+    ),
+    'max-content',
+  ].join(' ')
 
   const verdict = keepsUp
     ? {
@@ -255,6 +292,19 @@ export default function Ch5LeanSystems() {
         cls: 'text-garnet-800',
         detail: `${bn.name} needs ${fmt(bnPer)} s per piece but takt allows only ${fmtTakt(takt)} s per piece — capacity of ${fmt(cap)} pieces a day falls short of demand of ${fmtInt(daily)} pieces a day.`,
       }
+
+  /** the waiting total, each buffer marked with its triangle */
+  const waitSum = (
+    <>
+      {segments.map((d, i) => (
+        <span key={i}>
+          {i > 0 && ' + '}
+          <Tri color={AMBER} />
+          {fmt(round1(d))} days
+        </span>
+      ))}
+    </>
+  )
 
   /** the working total, each term in its step's color */
   const workSum = (
@@ -309,7 +359,7 @@ export default function Ch5LeanSystems() {
           The givens, the process chain, and how long one piece waits versus
           works on its way through.
         </p>
-        <div className="mb-4 flex flex-wrap items-end gap-x-6 gap-y-3 tabular-nums">
+        <div className="mb-5 flex flex-wrap items-end gap-x-6 gap-y-3 tabular-nums">
           {(
             [
               ['Weekly', 'demand', `${fmtInt(sc.weeklyDemand)} pieces`],
@@ -329,67 +379,71 @@ export default function Ch5LeanSystems() {
           ))}
         </div>
 
-        {/* process chain: inventory triangles alternating with step boxes */}
-        <div className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-3">
-          <Buffer value={`${fmt(sc.rawMaterialDays)} days`} sub="raw material" />
-          {sc.steps.map((s, i) => (
-            <span key={s.id} className="flex items-center gap-x-2">
-              <span aria-hidden className="text-stone-400">→</span>
-              <StepBox
-                step={s}
-                color={colors[s.id]}
-                isBottleneck={showAnswers && s.id === bn.id}
-              />
-              <span aria-hidden className="text-stone-400">→</span>
-              {i < sc.steps.length - 1 ? (
-                <Buffer
-                  value={`${fmtInt(sc.steps[i + 1].wipBefore ?? 0)} pcs`}
-                  sub="waiting"
+        {/* the line diagram: process chain on top, lead-time ladder beneath,
+            one shared column per buffer, arrow, and step */}
+        <div className="overflow-x-auto">
+          <div className="grid gap-y-3" style={{ gridTemplateColumns }}>
+            {/* row 1: inventory triangles alternating with step boxes */}
+            {cols.map((c) =>
+              c.kind === 'buffer' ? (
+                <span key={c.key} className="self-center">
+                  <Buffer value={c.value} sub={c.sub} />
+                </span>
+              ) : c.kind === 'step' ? (
+                <StepBox
+                  key={c.key}
+                  step={c.step}
+                  color={c.color}
+                  isBottleneck={c.isBottleneck}
                 />
               ) : (
-                <Buffer value={`${fmtInt(sc.wipAfterLast)} pcs`} sub="to ship" />
-              )}
-            </span>
-          ))}
-        </div>
+                <span
+                  key={c.key}
+                  aria-hidden
+                  className="self-center px-1.5 text-stone-400"
+                >
+                  →
+                </span>
+              ),
+            )}
+            <span />
 
-        {/* lead-time ladder: high rungs wait in days, low rungs work in seconds */}
-        <div className="overflow-x-auto">
-          <div className="flex min-w-[36rem] items-stretch gap-x-3">
-            <div className="flex grow">
-              {ladder.map((seg) =>
-                seg.kind === 'wait' ? (
-                  <div key={seg.key} className="min-w-14 flex-[1.4]">
-                    <div className="h-5 text-center text-xs font-semibold text-stone-700 tabular-nums">
-                      {seg.hidden ? (
-                        <span className="font-normal text-stone-400">? days</span>
-                      ) : (
-                        seg.label
-                      )}
-                    </div>
-                    <div
-                      className="h-8 border-t-2"
-                      style={{ borderColor: seg.color }}
-                    />
-                    <div className="h-5" />
+            {/* row 2: high rungs wait in days, low rungs work in seconds */}
+            {cols.map((c) =>
+              c.kind === 'buffer' ? (
+                <div key={c.key}>
+                  <div className="h-5 text-center text-xs font-semibold text-stone-700 tabular-nums">
+                    {c.hidden ? (
+                      <span className="font-normal text-stone-400">? days</span>
+                    ) : (
+                      c.days
+                    )}
                   </div>
-                ) : (
-                  <div key={seg.key} className="min-w-10 flex-1">
-                    <div className="h-5" />
-                    <div
-                      className="h-8 border-x-2 border-b-2"
-                      style={{ borderColor: seg.color }}
-                    />
-                    <div className="h-5 pt-1 text-center text-xs font-semibold text-stone-700 tabular-nums">
-                      {seg.label}
-                    </div>
+                  <div className="h-8 border-t-4" style={{ borderColor: AMBER }} />
+                  <div className="h-5" />
+                </div>
+              ) : c.kind === 'step' ? (
+                <div key={c.key}>
+                  <div className="h-5" />
+                  <div
+                    className="h-8 border-x-4 border-b-4"
+                    style={{ borderColor: c.color }}
+                  />
+                  <div className="h-5 pt-1 text-center text-xs font-semibold text-stone-700 tabular-nums">
+                    {c.step.cycleSec} s
                   </div>
-                ),
-              )}
-            </div>
-            <div className="flex shrink-0 flex-col justify-between py-0.5 text-right text-sm font-semibold text-stone-800 tabular-nums">
+                </div>
+              ) : (
+                <div key={c.key}>
+                  <div className="h-5" />
+                  <div className="h-8 border-t-4" style={{ borderColor: AMBER }} />
+                  <div className="h-5" />
+                </div>
+              ),
+            )}
+            <div className="flex flex-col justify-between py-0.5 pl-3 text-right text-sm font-semibold text-stone-800 tabular-nums">
               <span>
-                <Dot color={AMBER} />
+                <Tri color={AMBER} />
                 {showAnswers ? (
                   `${fmt(waitTotal)} days waiting`
                 ) : (
@@ -541,7 +595,7 @@ export default function Ch5LeanSystems() {
                 result={`${fmtInt(avail)} s/day`}
               />
               <Calc
-                dot={AMBER}
+                mark={<Tri color={AMBER} />}
                 name="Raw material wait"
                 result={`${fmt(sc.rawMaterialDays)} days`}
                 note="(given)"
@@ -549,7 +603,7 @@ export default function Ch5LeanSystems() {
               {sc.steps.slice(1).map((s, i) => (
                 <Calc
                   key={s.id}
-                  dot={AMBER}
+                  mark={<Tri color={AMBER} />}
                   name={`Wait before ${s.name}`}
                   formula="pieces waiting ÷ daily demand"
                   work={`${fmtInt(s.wipBefore ?? 0)} pieces ÷ ${fmtInt(daily)} pieces/day`}
@@ -557,7 +611,7 @@ export default function Ch5LeanSystems() {
                 />
               ))}
               <Calc
-                dot={AMBER}
+                mark={<Tri color={AMBER} />}
                 name="Finished goods wait"
                 formula="pieces waiting ÷ daily demand"
                 work={`${fmtInt(sc.wipAfterLast)} pieces ÷ ${fmtInt(daily)} pieces/day`}
@@ -566,7 +620,7 @@ export default function Ch5LeanSystems() {
               <Calc
                 name="Total waiting"
                 formula="every wait, added up"
-                work={segments.map((d) => `${fmt(round1(d))} days`).join(' + ')}
+                work={waitSum}
                 result={`${fmt(waitTotal)} days`}
               />
               <Calc
@@ -589,7 +643,7 @@ export default function Ch5LeanSystems() {
                 return (
                   <Calc
                     key={s.id}
-                    dot={colors[s.id]}
+                    mark={<Dot color={colors[s.id]} />}
                     name={s.name}
                     formula="cycle time + setup time ÷ batch size"
                     work={[
@@ -602,7 +656,7 @@ export default function Ch5LeanSystems() {
                 )
               })}
               <Calc
-                dot={GARNET}
+                mark={<Dot color={GARNET} />}
                 name="Bottleneck"
                 formula="the step with the largest time per piece"
                 result={`${bn.name}, ${fmt(bnPer)} s/piece`}
