@@ -15,29 +15,61 @@ import {
   type Step,
 } from '../../../lib/vsm'
 
-/** validated chart palette — blue for working time, amber for waiting */
-const BLUE = '#1d4ed8'
-const AMBER = '#b45309'
+/**
+ * Validated chart palette (all pairs, on the white card surface). Each step
+ * wears its own cool hue so the process chain, the bars, and the
+ * calculations line up; the bottleneck turns garnet once answers are shown;
+ * waiting is always amber. Text stays in stone ink — a colored mark beside
+ * it carries the identity.
+ */
+const STEP_COLORS = ['#2a78d6', '#0d9488', '#4a3aa7'] as const // blue, teal, violet
+const GARNET = '#a52547' // the bottleneck
+const AMBER = '#b45309' // waiting
+const NEUTRAL = '#57534e' // stone-600 — every step until answers are shown
 
-/** diagonal stripes mark the setup slice, in the work color */
+/** diagonal stripes mark the setup slice, in the step's color */
 const setupStyle = (color: string): React.CSSProperties => ({
   background: `repeating-linear-gradient(135deg, ${color} 0px, ${color} 3px, ${color}55 3px, ${color}55 6px)`,
 })
 
 const fmt = (v: number) =>
   v.toLocaleString('en-US', { maximumFractionDigits: 1 })
-const fmt1 = (v: number) => v.toFixed(1)
+const fmtTakt = (v: number) =>
+  v.toLocaleString('en-US', { maximumFractionDigits: 3 })
 const fmtInt = (v: number) => v.toLocaleString('en-US')
 const round1 = (v: number) => Math.round(v * 10) / 10
 
+/**
+ * The color each step wears right now: neutral until answers are shown,
+ * then garnet for the bottleneck and blue / teal / violet for the rest in
+ * line order. Stable for a given problem — a step only changes hue at the
+ * moment of the reveal.
+ */
+function stepColors(
+  sc: Scenario,
+  bn: Step,
+  showAnswers: boolean,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  let k = 0
+  for (const s of sc.steps) {
+    if (!showAnswers) out[s.id] = NEUTRAL
+    else if (s.id === bn.id) out[s.id] = GARNET
+    else out[s.id] = STEP_COLORS[k++ % STEP_COLORS.length]
+  }
+  return out
+}
+
+/** a colored dot that ties a name or a calculation line to its chart color */
+const Dot = ({ color }: { color: string }) => (
+  <span
+    className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle"
+    style={{ backgroundColor: color }}
+  />
+)
+
 /** amber VSM inventory triangle with its quantity */
-function Buffer({
-  value,
-  sub,
-}: {
-  value: string
-  sub: string
-}) {
+function Buffer({ value, sub }: { value: string; sub: string }) {
   return (
     <span className="flex flex-col items-center px-1 text-center">
       <span aria-hidden className="text-xl leading-none" style={{ color: AMBER }}>
@@ -51,9 +83,21 @@ function Buffer({
   )
 }
 
-function StepBox({ step }: { step: Step }) {
+/** a process step in the chain, tagged with its color along the top edge */
+function StepBox({
+  step,
+  color,
+  isBottleneck,
+}: {
+  step: Step
+  color: string
+  isBottleneck: boolean
+}) {
   return (
-    <span className="flex flex-col rounded-lg border border-stone-300 bg-stone-50 px-3 py-1.5 text-center">
+    <span
+      className="flex flex-col rounded-lg border border-stone-300 bg-stone-50 px-3 py-1.5 text-center"
+      style={{ borderTopWidth: 3, borderTopColor: color }}
+    >
       <span className="text-sm font-semibold text-stone-900">{step.name}</span>
       <span className="text-xs text-stone-600 tabular-nums">
         {step.cycleSec} s/pc
@@ -61,7 +105,72 @@ function StepBox({ step }: { step: Step }) {
       <span className="text-xs text-stone-500 tabular-nums">
         {step.setupMin > 0 ? `${step.setupMin} min setup` : 'no setup'}
       </span>
+      {isBottleneck && (
+        <span className="text-[10px] font-semibold tracking-wide text-garnet-800 uppercase">
+          bottleneck
+        </span>
+      )}
     </span>
+  )
+}
+
+/**
+ * One worked line: the name, then the formula in words, then the numbers
+ * with their units, then the answer — every "=" step spelled out.
+ */
+function Calc({
+  dot,
+  name,
+  formula,
+  work,
+  result,
+  resultSign = '=',
+  note,
+}: {
+  dot?: string
+  name: React.ReactNode
+  formula?: string
+  work?: React.ReactNode | React.ReactNode[]
+  result: React.ReactNode
+  resultSign?: string
+  note?: string
+}) {
+  const steps = work === undefined ? [] : Array.isArray(work) ? work : [work]
+  return (
+    <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-[13rem_1fr]">
+      <span className="font-medium text-stone-900">
+        {dot && <Dot color={dot} />}
+        {name}
+      </span>
+      <span className="text-stone-700">
+        {formula && <span className="text-stone-500">= {formula} </span>}
+        {steps.map((w, i) => (
+          <span key={i}>= {w} </span>
+        ))}
+        <span className="font-semibold text-stone-900">
+          {resultSign} {result}
+        </span>
+        {note && <span className="text-stone-500"> {note}</span>}
+      </span>
+    </div>
+  )
+}
+
+/** the calculations grouped under the same headline as the box they explain */
+function CalcGroup({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold tracking-widest text-stone-500 uppercase">
+        {title}
+      </p>
+      {children}
+    </div>
   )
 }
 
@@ -87,7 +196,9 @@ export default function Ch5LeanSystems() {
   const waitTotal = segments.reduce((a, b) => a + round1(b), 0)
   const workTotal = totalProcessingSec(sc)
   const anySetups = sc.steps.some((s) => s.setupMin > 0)
-  /** all beat bars and the takt line share this scale, from zero */
+  const keepsUp = cap >= daily
+  const colors = stepColors(sc, bn, showAnswers)
+  /** all bars and the takt line share this scale, from zero */
   const scaleMax =
     Math.max(takt, ...sc.steps.map((s) => perUnitSec(s, sc.batchSize))) * 1.08
 
@@ -108,35 +219,55 @@ export default function Ch5LeanSystems() {
     key: string
     kind: 'wait' | 'work'
     label: string
+    color: string
     hidden?: boolean
   }[] = []
   ladder.push({
     key: 'raw',
     kind: 'wait',
     label: `${fmt(sc.rawMaterialDays)} days`,
+    color: AMBER,
   })
   sc.steps.forEach((s, i) => {
-    ladder.push({ key: `${s.id}w`, kind: 'work', label: `${s.cycleSec} s` })
+    ladder.push({
+      key: `${s.id}w`,
+      kind: 'work',
+      label: `${s.cycleSec} s`,
+      color: colors[s.id],
+    })
     ladder.push({
       key: `${s.id}b`,
       kind: 'wait',
       label: `${fmt(round1(segments[i + 1]))} days`,
+      color: AMBER,
       hidden: !showAnswers, // computed from WIP — practice material
     })
   })
 
-  const verdict =
-    cap >= daily
-      ? {
-          label: 'Keeps up',
-          cls: 'text-teal-700',
-          detail: `${bn.name} needs ${fmt(bnPer)} s per piece against a ${fmt1(takt)} s beat — capacity ${fmt(cap)} a day covers demand of ${fmtInt(daily)}.`,
-        }
-      : {
-          label: 'Can’t keep up',
-          cls: 'text-garnet-800',
-          detail: `${bn.name} needs ${fmt(bnPer)} s per piece but the beat allows only ${fmt1(takt)} s — capacity ${fmt(cap)} a day falls short of demand of ${fmtInt(daily)}.`,
-        }
+  const verdict = keepsUp
+    ? {
+        label: 'Keeps up',
+        cls: 'text-teal-700',
+        detail: `${bn.name} needs ${fmt(bnPer)} s per piece against a takt of ${fmtTakt(takt)} s per piece — capacity of ${fmt(cap)} pieces a day covers demand of ${fmtInt(daily)} pieces a day.`,
+      }
+    : {
+        label: 'Can’t keep up',
+        cls: 'text-garnet-800',
+        detail: `${bn.name} needs ${fmt(bnPer)} s per piece but takt allows only ${fmtTakt(takt)} s per piece — capacity of ${fmt(cap)} pieces a day falls short of demand of ${fmtInt(daily)} pieces a day.`,
+      }
+
+  /** the working total, each term in its step's color */
+  const workSum = (
+    <>
+      {sc.steps.map((s, i) => (
+        <span key={s.id}>
+          {i > 0 && ' + '}
+          <Dot color={colors[s.id]} />
+          {s.cycleSec} s
+        </span>
+      ))}
+    </>
+  )
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -173,7 +304,11 @@ export default function Ch5LeanSystems() {
 
       {/* The line — read-only givens */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-3 text-lg font-semibold text-stone-900">The line</h2>
+        <h2 className="mb-1 text-lg font-semibold text-stone-900">The line</h2>
+        <p className="mb-4 text-sm text-stone-600">
+          The givens, the process chain, and how long one piece waits versus
+          works on its way through.
+        </p>
         <div className="mb-4 flex flex-wrap items-end gap-x-6 gap-y-3 tabular-nums">
           {(
             [
@@ -200,7 +335,11 @@ export default function Ch5LeanSystems() {
           {sc.steps.map((s, i) => (
             <span key={s.id} className="flex items-center gap-x-2">
               <span aria-hidden className="text-stone-400">→</span>
-              <StepBox step={s} />
+              <StepBox
+                step={s}
+                color={colors[s.id]}
+                isBottleneck={showAnswers && s.id === bn.id}
+              />
               <span aria-hidden className="text-stone-400">→</span>
               {i < sc.steps.length - 1 ? (
                 <Buffer
@@ -221,56 +360,57 @@ export default function Ch5LeanSystems() {
               {ladder.map((seg) =>
                 seg.kind === 'wait' ? (
                   <div key={seg.key} className="min-w-14 flex-[1.4]">
-                    <div
-                      className="h-5 text-center text-xs font-semibold tabular-nums"
-                      style={{ color: AMBER }}
-                    >
+                    <div className="h-5 text-center text-xs font-semibold text-stone-700 tabular-nums">
                       {seg.hidden ? (
                         <span className="font-normal text-stone-400">? days</span>
                       ) : (
                         seg.label
                       )}
                     </div>
-                    <div className="h-8 border-t-2 border-stone-400" />
+                    <div
+                      className="h-8 border-t-2"
+                      style={{ borderColor: seg.color }}
+                    />
                     <div className="h-5" />
                   </div>
                 ) : (
                   <div key={seg.key} className="min-w-10 flex-1">
                     <div className="h-5" />
-                    <div className="h-8 border-x-2 border-b-2 border-stone-400" />
                     <div
-                      className="h-5 pt-1 text-center text-xs font-semibold tabular-nums"
-                      style={{ color: BLUE }}
-                    >
+                      className="h-8 border-x-2 border-b-2"
+                      style={{ borderColor: seg.color }}
+                    />
+                    <div className="h-5 pt-1 text-center text-xs font-semibold text-stone-700 tabular-nums">
                       {seg.label}
                     </div>
                   </div>
                 ),
               )}
             </div>
-            <div className="flex shrink-0 flex-col justify-between py-0.5 text-right text-sm font-semibold tabular-nums">
-              <span style={{ color: AMBER }}>
+            <div className="flex shrink-0 flex-col justify-between py-0.5 text-right text-sm font-semibold text-stone-800 tabular-nums">
+              <span>
+                <Dot color={AMBER} />
                 {showAnswers ? (
                   `${fmt(waitTotal)} days waiting`
                 ) : (
                   <span className="font-normal text-stone-400">? days waiting</span>
                 )}
               </span>
-              <span style={{ color: BLUE }}>{fmtInt(workTotal)} s working</span>
+              <span>{fmtInt(workTotal)} s working</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* The beat — per-unit time at each step against takt */}
+      {/* One cycle — time per piece at each step against takt */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-stone-900">The beat</h2>
+        <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold text-stone-900">One cycle</h2>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
             <span className="flex items-center gap-1.5">
               <span
                 className="inline-block h-2.5 w-4 rounded-sm"
-                style={{ backgroundColor: BLUE }}
+                style={{ backgroundColor: NEUTRAL }}
               />
               cycle time
             </span>
@@ -278,7 +418,7 @@ export default function Ch5LeanSystems() {
               <span className="flex items-center gap-1.5">
                 <span
                   className="inline-block h-2.5 w-4 rounded-sm"
-                  style={setupStyle(BLUE)}
+                  style={setupStyle(NEUTRAL)}
                 />
                 setup share per piece
               </span>
@@ -289,6 +429,10 @@ export default function Ch5LeanSystems() {
             </span>
           </div>
         </div>
+        <p className="mb-4 text-sm text-stone-600">
+          How long one piece takes at each step — its cycle time plus its share
+          of the setup — against the takt time the line has to hold.
+        </p>
         <div className="space-y-2.5">
           {/* takt label sits above the bars, at the line's position */}
           <div className="grid grid-cols-[8.5rem_1fr_5rem] items-center gap-3">
@@ -299,7 +443,7 @@ export default function Ch5LeanSystems() {
                   className="absolute -translate-x-1/2 text-xs font-semibold whitespace-nowrap text-stone-600 tabular-nums"
                   style={{ left: `${(takt / scaleMax) * 100}%` }}
                 >
-                  takt = {fmt1(takt)} s
+                  takt = {fmtTakt(takt)} s
                 </span>
               )}
             </div>
@@ -309,26 +453,35 @@ export default function Ch5LeanSystems() {
             const per = perUnitSec(s, sc.batchSize)
             const isBn = showAnswers && s.id === bn.id
             const setupShare = (s.setupMin * 60) / sc.batchSize
+            const color = colors[s.id]
             return (
               <div
                 key={s.id}
                 className="grid grid-cols-[8.5rem_1fr_5rem] items-center gap-3"
               >
-                <span
-                  className={`text-sm ${isBn ? 'font-semibold text-garnet-800' : 'font-medium text-stone-800'}`}
-                >
-                  {s.name}
+                <span className="flex flex-col text-sm leading-tight">
+                  <span
+                    className={`text-stone-800 ${isBn ? 'font-semibold' : 'font-medium'}`}
+                  >
+                    <Dot color={color} />
+                    {s.name}
+                  </span>
+                  {isBn && (
+                    <span className="text-[10px] font-semibold tracking-wide text-garnet-800 uppercase">
+                      bottleneck
+                    </span>
+                  )}
                 </span>
                 <div className="relative h-6">
                   <div
-                    className={`flex h-full overflow-hidden rounded ${isBn ? 'ring-2 ring-garnet-600' : ''}`}
+                    className="flex h-full gap-[2px] overflow-hidden rounded-r"
                     style={{ width: `${(per / scaleMax) * 100}%` }}
                   >
                     <div
-                      title={`${s.name} — cycle: ${s.cycleSec} s`}
+                      title={`${s.name} — cycle time: ${s.cycleSec} s per piece`}
                       style={{
                         width: `${(s.cycleSec / per) * 100}%`,
-                        backgroundColor: BLUE,
+                        backgroundColor: color,
                       }}
                     />
                     {s.setupMin > 0 && (
@@ -336,7 +489,7 @@ export default function Ch5LeanSystems() {
                         title={`${s.name} — setup share: ${fmt(setupShare)} s per piece`}
                         style={{
                           width: `${(setupShare / per) * 100}%`,
-                          ...setupStyle(BLUE),
+                          ...setupStyle(color),
                         }}
                       />
                     )}
@@ -363,62 +516,111 @@ export default function Ch5LeanSystems() {
         )}
       </div>
 
-      {/* The calculations */}
+      {/* The calculations — same headlines as the boxes above */}
       {showAnswers && (
         <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-          <h2 className="mb-3 text-lg font-semibold text-stone-900">
+          <h2 className="mb-1 text-lg font-semibold text-stone-900">
             The calculations
           </h2>
-          <div className="space-y-4 text-sm text-stone-700 tabular-nums">
-            <div className="space-y-1.5">
-              <p>
-                Daily demand = {fmtInt(sc.weeklyDemand)} / {sc.daysPerWeek} ={' '}
-                {fmtInt(daily)} pieces
-              </p>
-              <p>
-                Availability = ({sc.shiftHours} − {fmt(sc.lunchHours)}) × 3,600 ={' '}
-                {fmtInt(avail)} s per day
-              </p>
-              <p>
-                Takt = {fmtInt(avail)} / {fmtInt(daily)} ={' '}
-                {takt.toLocaleString('en-US', { maximumFractionDigits: 3 })} s
-                per piece
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              {sc.steps.map((s) => (
-                <p key={s.id}>
-                  {s.name} ={' '}
-                  {s.setupMin > 0
-                    ? `${s.cycleSec} + (${s.setupMin} × 60) / ${sc.batchSize} = ${fmt(perUnitSec(s, sc.batchSize))} s`
-                    : `${s.cycleSec} s (no setup)`}
-                </p>
-              ))}
-              <p className="font-semibold text-stone-900">
-                Bottleneck = {bn.name} at {fmt(bnPer)} s per piece
-              </p>
-              <p>
-                Capacity = {fmtInt(avail)} / {fmt(bnPer)} = {fmt(cap)} units/day
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <p>Raw material = {fmt(sc.rawMaterialDays)} days</p>
+          <p className="mb-4 text-sm text-stone-600">
+            Each line reads the same way: the formula in words, then the
+            numbers with their units, then the answer.
+          </p>
+          <div className="space-y-6 text-sm tabular-nums">
+            <CalcGroup title="The line">
+              <Calc
+                name="Daily demand"
+                formula="weekly demand ÷ work days"
+                work={`${fmtInt(sc.weeklyDemand)} pieces/week ÷ ${sc.daysPerWeek} days/week`}
+                result={`${fmtInt(daily)} pieces/day`}
+              />
+              <Calc
+                name="Available time"
+                formula="(shift − lunch) × 3,600 s/h"
+                work={`(${sc.shiftHours} h − ${fmt(sc.lunchHours)} h) × 3,600 s/h`}
+                result={`${fmtInt(avail)} s/day`}
+              />
+              <Calc
+                dot={AMBER}
+                name="Raw material wait"
+                result={`${fmt(sc.rawMaterialDays)} days`}
+                note="(given)"
+              />
               {sc.steps.slice(1).map((s, i) => (
-                <p key={s.id}>
-                  Before {s.name} = {fmtInt(s.wipBefore ?? 0)} / {fmtInt(daily)}{' '}
-                  = {fmt(round1(segments[i + 1]))} days
-                </p>
+                <Calc
+                  key={s.id}
+                  dot={AMBER}
+                  name={`Wait before ${s.name}`}
+                  formula="pieces waiting ÷ daily demand"
+                  work={`${fmtInt(s.wipBefore ?? 0)} pieces ÷ ${fmtInt(daily)} pieces/day`}
+                  result={`${fmt(round1(segments[i + 1]))} days`}
+                />
               ))}
-              <p>
-                Finished goods = {fmtInt(sc.wipAfterLast)} / {fmtInt(daily)} ={' '}
-                {fmt(round1(segments[segments.length - 1]))} days
-              </p>
-              <p className="font-semibold text-stone-900">
-                Total = {segments.map((d) => fmt(round1(d))).join(' + ')} ={' '}
-                {fmt(waitTotal)} days vs total processing{' '}
-                {sc.steps.map((s) => s.cycleSec).join(' + ')} = {fmtInt(workTotal)} s
-              </p>
-            </div>
+              <Calc
+                dot={AMBER}
+                name="Finished goods wait"
+                formula="pieces waiting ÷ daily demand"
+                work={`${fmtInt(sc.wipAfterLast)} pieces ÷ ${fmtInt(daily)} pieces/day`}
+                result={`${fmt(round1(segments[segments.length - 1]))} days`}
+              />
+              <Calc
+                name="Total waiting"
+                formula="every wait, added up"
+                work={segments.map((d) => `${fmt(round1(d))} days`).join(' + ')}
+                result={`${fmt(waitTotal)} days`}
+              />
+              <Calc
+                name="Total working"
+                formula="every cycle time, added up"
+                work={workSum}
+                result={`${fmtInt(workTotal)} s`}
+              />
+            </CalcGroup>
+
+            <CalcGroup title="One cycle">
+              <Calc
+                name="Takt time"
+                formula="available time ÷ daily demand"
+                work={`${fmtInt(avail)} s/day ÷ ${fmtInt(daily)} pieces/day`}
+                result={`${fmtTakt(takt)} s/piece`}
+              />
+              {sc.steps.map((s) => {
+                const share = (s.setupMin * 60) / sc.batchSize
+                return (
+                  <Calc
+                    key={s.id}
+                    dot={colors[s.id]}
+                    name={s.name}
+                    formula="cycle time + setup time ÷ batch size"
+                    work={[
+                      `${s.cycleSec} s + (${s.setupMin} min × 60 s/min) ÷ ${sc.batchSize} pieces`,
+                      `${s.cycleSec} s + ${fmt(share)} s`,
+                    ]}
+                    result={`${fmt(perUnitSec(s, sc.batchSize))} s/piece`}
+                    note={s.setupMin === 0 ? '(no setup)' : undefined}
+                  />
+                )
+              })}
+              <Calc
+                dot={GARNET}
+                name="Bottleneck"
+                formula="the step with the largest time per piece"
+                result={`${bn.name}, ${fmt(bnPer)} s/piece`}
+              />
+              <Calc
+                name="Capacity"
+                formula="available time ÷ bottleneck time per piece"
+                work={`${fmtInt(avail)} s/day ÷ ${fmt(bnPer)} s/piece`}
+                result={`${fmt(cap)} pieces/day`}
+              />
+              <Calc
+                name="Keeps up?"
+                formula="capacity against daily demand"
+                work={`${fmt(cap)} pieces/day ${keepsUp ? '≥' : '<'} ${fmtInt(daily)} pieces/day`}
+                resultSign="→"
+                result={<span className={verdict.cls}>{verdict.label}</span>}
+              />
+            </CalcGroup>
           </div>
         </div>
       )}
