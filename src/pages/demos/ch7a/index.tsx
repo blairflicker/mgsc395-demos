@@ -17,7 +17,7 @@ import {
   type Rates,
   type WashType,
 } from '../../../lib/carwash'
-import { Network, QUEUE_VISIBLE, TYPE_COLOR } from './Network'
+import { Network, QUEUE_VISIBLE, TYPE_COLOR, type Annotation } from './Network'
 import { MixChart } from './MixChart'
 
 /** sim-minutes per real second; at 1× one real second is one minute */
@@ -26,13 +26,9 @@ const DEFAULT_SPEED = 10
 /** how long a finished car lingers while it fades out the exit */
 const EXIT_MS = 700
 const MAX_RATE = 12
+/** the finishing-rate readout averages over this many recent sim-minutes */
+const RATE_WINDOW_MIN = 240
 const RATE_STEP = 0.5
-
-const PRESETS: { name: string; rates: Rates }[] = [
-  { name: 'The slides: 6 + 6', rates: { standard: 6, deluxe: 6 } },
-  { name: 'Just fits: 3 + 3', rates: { standard: 3, deluxe: 3 } },
-  { name: 'Mostly Standard: 9 + 3', rates: { standard: 9, deluxe: 3 } },
-]
 
 const fmt1 = (x: number) =>
   x.toLocaleString('en-US', { maximumFractionDigits: 1 })
@@ -50,6 +46,7 @@ export default function Ch7aCarWash() {
   // starts paused so students can set the dials first, then hit Play
   const [running, setRunning] = useState(false)
   const [showAnswers, setShowAnswers] = useState(false)
+  const [annotate, setAnnotate] = useState<Annotation>('duration')
   const [, frameTick] = useReducer((x: number) => x + 1, 0)
 
   const simRef = useRef<CarWashSim | null>(null)
@@ -109,9 +106,8 @@ export default function Ch7aCarWash() {
   )
   const flows = fluidFlows(rates)
   const arriving = totalRate(rates)
-  const elapsedH = sim.now / 60
   const finished = totalRate(sim.completed)
-  const observedRate = elapsedH > 0 ? finished / elapsedH : 0
+  const recentRate = sim.recentRate(RATE_WINDOW_MIN)
   const wip = sim.wip()
   const piling = flows.stations.filter((f) => f.accumulation > 0.005)
 
@@ -135,8 +131,8 @@ export default function Ch7aCarWash() {
           {showAnswers ? 'Hide answers' : 'Show answers'}
         </button>
         <span className="text-xs text-stone-500">
-          Answers show each station&rsquo;s capacity in cars per hour and how
-          fast each line grows.
+          Answers mark where lines grow and how fast, then unpack the flows
+          below.
         </span>
       </div>
 
@@ -218,26 +214,6 @@ export default function Ch7aCarWash() {
                 {arriving > capacityPerHour(STATIONS[0]) &&
                   ` — more than A1 can admit (${fmt1(capacityPerHour(STATIONS[0]))} / hr)`}
               </span>
-              <span className="ml-auto flex flex-wrap gap-1.5">
-                {PRESETS.map((p) => {
-                  const active =
-                    p.rates.standard === rates.standard && p.rates.deluxe === rates.deluxe
-                  return (
-                    <button
-                      key={p.name}
-                      onClick={() => setRates({ ...p.rates })}
-                      className={[
-                        'rounded-md border px-2 py-1 font-medium',
-                        active
-                          ? 'border-garnet-300 bg-garnet-50 text-garnet-900'
-                          : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-50',
-                      ].join(' ')}
-                    >
-                      {p.name}
-                    </button>
-                  )
-                })}
-              </span>
             </div>
           </div>
 
@@ -289,12 +265,39 @@ export default function Ch7aCarWash() {
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold text-stone-900">The wash</h2>
-          <span className="text-xs text-stone-500">
-            Each line shows its first {QUEUE_VISIBLE} cars; the badge counts
-            them all.
-          </span>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-stone-500">Annotate with</span>
+            <div className="flex overflow-hidden rounded-md border border-stone-300">
+              {(
+                [
+                  ['duration', 'Duration'],
+                  ['flow', 'Flow'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setAnnotate(key)}
+                  aria-pressed={annotate === key}
+                  className={[
+                    'px-2.5 py-1 font-medium',
+                    annotate === key
+                      ? 'bg-garnet-800 text-white'
+                      : 'bg-white text-stone-700 hover:bg-stone-50',
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="text-stone-500">
+              {annotate === 'flow' ? 'cars per hour' : 'minutes per car'}
+            </span>
+          </div>
         </div>
-        <Network view={view} flows={flows} showAnswers={showAnswers} />
+        <Network view={view} flows={flows} annotate={annotate} showAnswers={showAnswers} />
+        <p className="mt-2 text-xs text-stone-500">
+          Each line shows its first {QUEUE_VISIBLE} cars; the badge above it counts them all.
+        </p>
 
         <div className="mt-4 grid gap-3 border-t border-stone-100 pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -319,12 +322,12 @@ export default function Ch7aCarWash() {
           </div>
           <div>
             <div className="text-xs font-semibold text-stone-500 uppercase">
-              Finishing rate so far
+              Finishing rate, last {RATE_WINDOW_MIN / 60} h
             </div>
             <div className="text-lg text-stone-800 tabular-nums">
-              {elapsedH >= 1 ? `${fmt1(observedRate)} / hr` : '—'}
+              {recentRate === null ? '—' : `${recentRate.toFixed(1)} / hr`}
               <span className="ml-2 text-xs text-stone-500">
-                {elapsedH >= 1 ? 'finished ÷ hours run' : 'after the first hour'}
+                {recentRate === null ? 'once cars finish' : 'cars finished per hour, recently'}
               </span>
             </div>
           </div>
@@ -471,8 +474,7 @@ export default function Ch7aCarWash() {
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <h2 className="mb-1 text-lg font-semibold text-stone-900">The data</h2>
         <p className="mb-3 text-sm text-stone-600">
-          One car at a time at every station. Capacity = 60 min/hr ÷ minutes
-          per car.
+          One car at a time at every station. Flow = 60 min/hr ÷ duration.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full max-w-md min-w-72 text-sm">
@@ -480,30 +482,22 @@ export default function Ch7aCarWash() {
               <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
                 <th className="py-1.5 pr-3 font-semibold">Station</th>
                 <th className="py-1.5 pr-3 font-semibold">Who</th>
-                <th className="py-1.5 pr-3 text-right font-semibold">Min / car</th>
-                {showAnswers && (
-                  <th className="py-1.5 text-right font-semibold">Cars / hr</th>
-                )}
+                <th className="py-1.5 pr-3 text-right font-semibold">Duration</th>
+                <th className="py-1.5 text-right font-semibold">Flow</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
               {STATIONS.map((s) => (
                 <tr key={s.id} className="border-b border-stone-100 last:border-0">
                   <td className="py-1 pr-3 text-stone-700">
-                    {s.id}
-                    {s.note && (
-                      <span className="ml-1.5 text-xs text-stone-400">{s.note}</span>
-                    )}
-                  </td>
+                    {s.id}</td>
                   <td className="py-1 pr-3 text-stone-700">
                     {servedBy(s.id).length === 2 ? 'both' : WASH_LABEL[servedBy(s.id)[0]]}
                   </td>
-                  <td className="py-1 pr-3 text-right text-stone-700">{s.minutes}</td>
-                  {showAnswers && (
-                    <td className="py-1 text-right text-stone-700">
-                      60 ÷ {s.minutes} = {fmt1(capacityPerHour(s))}
-                    </td>
-                  )}
+                  <td className="py-1 pr-3 text-right text-stone-700">{s.minutes} min / car</td>
+                  <td className="py-1 text-right text-stone-700">
+                    60 ÷ {s.minutes} = {fmt1(capacityPerHour(s))} cars / hr
+                  </td>
                 </tr>
               ))}
             </tbody>

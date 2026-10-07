@@ -15,12 +15,15 @@ export const TYPE_COLOR: Record<WashType, string> = {
 }
 const GARNET = '#a52547'
 
+/** how each station is labeled: its time per car, or its cars per hour */
+export type Annotation = 'duration' | 'flow'
+
 const W = 1100
 const H = 380
-const R = 27 // station radius
+const R = 30 // station radius
 const DOT_R = 6
 const QUEUE_COLS = 5
-const QUEUE_ROWS = 2
+const QUEUE_ROWS = 3
 /** dots drawn per line; the badge above carries the real count */
 export const QUEUE_VISIBLE = QUEUE_COLS * QUEUE_ROWS
 
@@ -35,7 +38,7 @@ const NODE: Record<string, { x: number; y: number }> = {
   A7: { x: 880, y: 300 },
   A8: { x: 1040, y: 190 },
 }
-const SPLIT = { x: 395, y: 190 }
+const SPLIT = { x: 395, y: 190, hw: 50, hh: 44 }
 
 /** the slide's pastel per station */
 const FILL: Record<string, string> = {
@@ -49,17 +52,20 @@ const FILL: Record<string, string> = {
   A8: '#d1cfea',
 }
 
+const GAP = 2 // breathing room between an arrowhead and the shape it points at
+const across = (a: string, b: string) =>
+  `M${NODE[a].x + R},${NODE[a].y} H${NODE[b].x - R - GAP}`
 const EDGES = [
-  'M137,190 H221',
-  'M277,190 H343',
-  'M395,146 V80 H571',
-  'M395,234 V300 H531',
-  'M627,80 H731',
-  'M787,80 H1040 V161',
-  'M587,300 H691',
-  'M747,300 H851',
-  'M907,300 H1040 V219',
-  'M1067,190 H1096',
+  across('A1', 'A2'),
+  `M${NODE.A2.x + R},${NODE.A2.y} H${SPLIT.x - SPLIT.hw - GAP}`,
+  `M${SPLIT.x},${SPLIT.y - SPLIT.hh} V${NODE.A3.y} H${NODE.A3.x - R - GAP}`,
+  `M${SPLIT.x},${SPLIT.y + SPLIT.hh} V${NODE.A5.y} H${NODE.A5.x - R - GAP}`,
+  across('A3', 'A4'),
+  `M${NODE.A4.x + R},${NODE.A4.y} H${NODE.A8.x} V${NODE.A8.y - R - GAP}`,
+  across('A5', 'A6'),
+  across('A6', 'A7'),
+  `M${NODE.A7.x + R},${NODE.A7.y} H${NODE.A8.x} V${NODE.A8.y + R + GAP}`,
+  `M${NODE.A8.x + R},${NODE.A8.y} H${W - 4}`,
 ]
 
 /** center of the pile of waiting cars in front of a station */
@@ -74,26 +80,29 @@ function dotPos(c: CarView): { x: number; y: number } {
   if (c.role === 'service') return { x: n.x, y: n.y }
   const col = c.queueIndex % QUEUE_COLS
   const row = Math.floor(c.queueIndex / QUEUE_COLS)
-  return { x: n.x - R - 14 - col * 13, y: n.y - 7 + row * 14 }
+  return { x: n.x - R - 14 - col * 13, y: n.y - 14 + row * 14 }
 }
 
-const fmtCap = (v: number) =>
+const fmtRate = (v: number) =>
   v.toLocaleString('en-US', { maximumFractionDigits: 1 })
 
 /**
- * The wash as a network. Stations are circles that darken while busy;
- * each has a small pile of waiting cars in front of it (the first ten in
+ * The wash as a network. Stations are circles that darken while busy and
+ * are labeled with either their minutes per car or their cars per hour;
+ * each has a small pile of waiting cars in front of it (the first fifteen in
  * line) with a badge carrying the true count, so a line that outgrows the
- * pile keeps counting. With answers on, each station shows its capacity in
- * cars/hr and, where cars pile up, how fast they do — in garnet.
+ * pile keeps counting. With answers on, stations where cars pile up turn
+ * garnet and show how fast the line grows.
  */
 export const Network = memo(function Network({
   view,
   flows,
+  annotate,
   showAnswers,
 }: {
   view: SimView
   flows: FluidResult
+  annotate: Annotation
   showAnswers: boolean
 }) {
   return (
@@ -143,27 +152,15 @@ export const Network = memo(function Network({
 
         {/* the split */}
         <polygon
-          points={`${SPLIT.x - 50},${SPLIT.y} ${SPLIT.x},${SPLIT.y - 44} ${SPLIT.x + 50},${SPLIT.y} ${SPLIT.x},${SPLIT.y + 44}`}
+          points={`${SPLIT.x - SPLIT.hw},${SPLIT.y} ${SPLIT.x},${SPLIT.y - SPLIT.hh} ${SPLIT.x + SPLIT.hw},${SPLIT.y} ${SPLIT.x},${SPLIT.y + SPLIT.hh}`}
           fill="#fbe9b0"
           stroke="#d6b65a"
           strokeWidth={1.5}
         />
-        <text
-          x={SPLIT.x}
-          y={SPLIT.y - 3}
-          textAnchor="middle"
-          fontSize={12}
-          fill="#44403c"
-        >
+        <text x={SPLIT.x} y={SPLIT.y - 3} textAnchor="middle" fontSize={12} fill="#44403c">
           Standard
         </text>
-        <text
-          x={SPLIT.x}
-          y={SPLIT.y + 12}
-          textAnchor="middle"
-          fontSize={12}
-          fill="#44403c"
-        >
+        <text x={SPLIT.x} y={SPLIT.y + 12} textAnchor="middle" fontSize={12} fill="#44403c">
           or Deluxe
         </text>
         <text x={SPLIT.x - 10} y={126} textAnchor="end" fontSize={13} fill="#57534e">
@@ -181,6 +178,8 @@ export const Network = memo(function Network({
           const flow = flows.byId[s.id]
           const piling = showAnswers && flow.accumulation > 0.005
           const pile = pileCenter(s.id)
+          const value = annotate === 'flow' ? `${fmtRate(flow.capacity)} cars` : `${s.minutes} min`
+          const unit = annotate === 'flow' ? 'per hour' : 'per car'
           return (
             <g key={s.id}>
               <circle
@@ -194,7 +193,7 @@ export const Network = memo(function Network({
               />
               <text
                 x={n.x}
-                y={n.y - 3}
+                y={n.y - 8}
                 textAnchor="middle"
                 fontSize={14}
                 fontWeight={600}
@@ -202,85 +201,34 @@ export const Network = memo(function Network({
               >
                 {s.id}
               </text>
-              <text
-                x={n.x}
-                y={n.y + 12}
-                textAnchor="middle"
-                fontSize={11}
-                fill="#44403c"
-              >
-                {s.minutes} min
+              <text x={n.x} y={n.y + 6} textAnchor="middle" fontSize={11.5} fill="#1c1917">
+                {value}
               </text>
-              {s.note && !showAnswers && (
-                <text
-                  x={n.x}
-                  y={n.y + R + 15}
-                  textAnchor="middle"
-                  fontSize={11}
-                  fill="#78716c"
-                >
-                  {s.note}
-                </text>
-              )}
+              <text x={n.x} y={n.y + 18} textAnchor="middle" fontSize={9.5} fill="#44403c">
+                {unit}
+              </text>
 
               {/* how many are in line */}
               {waiting > 0 && (
                 <g transform={`translate(${pile.x}, ${n.y - 38})`}>
-                  <rect
-                    x={-36}
-                    y={-10}
-                    width={72}
-                    height={20}
-                    rx={10}
-                    fill="#292524"
-                  />
-                  <text
-                    y={4}
-                    textAnchor="middle"
-                    fontSize={11}
-                    fontWeight={600}
-                    fill="#fff"
-                  >
+                  <rect x={-36} y={-10} width={72} height={20} rx={10} fill="#292524" />
+                  <text y={4} textAnchor="middle" fontSize={11} fontWeight={600} fill="#fff">
                     {waiting.toLocaleString('en-US')} waiting
                   </text>
                 </g>
               )}
 
-              {showAnswers && (
-                <>
-                  <g transform={`translate(${n.x}, ${n.y + R + 15})`}>
-                    <rect
-                      x={-32}
-                      y={-10}
-                      width={64}
-                      height={20}
-                      rx={10}
-                      fill="#fff"
-                      stroke={piling ? GARNET : '#d6d3d1'}
-                    />
-                    <text
-                      y={4}
-                      textAnchor="middle"
-                      fontSize={11}
-                      fontWeight={600}
-                      fill={piling ? GARNET : '#44403c'}
-                    >
-                      {fmtCap(flow.capacity)} / hr
-                    </text>
-                  </g>
-                  {piling && (
-                    <text
-                      x={pile.x}
-                      y={n.y + 36}
-                      textAnchor="middle"
-                      fontSize={11}
-                      fontWeight={700}
-                      fill={GARNET}
-                    >
-                      +{fmtCap(flow.accumulation)} / hr pile up
-                    </text>
-                  )}
-                </>
+              {piling && (
+                <text
+                  x={pile.x}
+                  y={n.y + 36}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fontWeight={700}
+                  fill={GARNET}
+                >
+                  +{fmtRate(flow.accumulation)} / hr pile up
+                </text>
               )}
             </g>
           )

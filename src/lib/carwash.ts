@@ -30,8 +30,6 @@ export interface Station {
   id: string
   /** minutes to process one car */
   minutes: number
-  /** what the slide calls it, when it says */
-  note?: string
 }
 
 /** in the order flow reaches them (A3/A4 and A5/A6/A7 are parallel legs) */
@@ -43,7 +41,7 @@ export const STATIONS: Station[] = [
   { id: 'A5', minutes: 5 },
   { id: 'A6', minutes: 20 },
   { id: 'A7', minutes: 12 },
-  { id: 'A8', minutes: 10, note: 'drying station' },
+  { id: 'A8', minutes: 10 },
 ]
 
 export const STATION_BY_ID: Record<string, Station> = Object.fromEntries(
@@ -285,6 +283,8 @@ export class CarWashSim {
   completed: Rates = { standard: 0, deluxe: 0 }
   /** cars that have left, newest last; the caller trims this list */
   finished: Car[] = []
+  /** sim-minutes at which cars left, oldest first (bounded) */
+  doneTimes: number[] = []
 
   private nextId = 1
   private nextArrival: Rates
@@ -343,6 +343,24 @@ export class CarWashSim {
     const st = this.stations[id]
     const busy = st.busyMinutes + (st.current ? this.now - st.startedAt : 0)
     return busy / this.now
+  }
+
+  /**
+   * Cars finished per hour over the last `windowMin` minutes (or since the
+   * start, if sooner). Arrivals in half-car steps make every finish pattern
+   * repeat within 120 minutes, so a 240-minute window counts an exact
+   * number of repeats and reads 6.0, not 5.9, once the wash has settled.
+   * Null until a car has finished.
+   */
+  recentRate(windowMin: number): number | null {
+    if (this.now <= 0) return null
+    const span = Math.min(windowMin, this.now)
+    const since = this.now - span
+    let count = 0
+    for (let i = this.doneTimes.length - 1; i >= 0 && this.doneTimes[i] > since; i--) {
+      count++
+    }
+    return count === 0 ? null : (count * 60) / span
   }
 
   /** run every event up to and including sim-minute `toTime` */
@@ -427,6 +445,8 @@ export class CarWashSim {
       car.doneAt = this.now
       this.completed[car.type]++
       this.finished.push(car)
+      this.doneTimes.push(this.now)
+      if (this.doneTimes.length > 4000) this.doneTimes.splice(0, 2000)
     }
   }
 }
