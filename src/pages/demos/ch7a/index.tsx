@@ -17,7 +17,7 @@ import {
   type Rates,
   type WashType,
 } from '../../../lib/carwash'
-import { Network, QUEUE_VISIBLE, TYPE_COLOR, type Annotation } from './Network'
+import { Network, QUEUE_VISIBLE, TYPE_COLOR } from './Network'
 import { MixChart } from './MixChart'
 
 /** sim-minutes per real second; at 1× one real second is one minute */
@@ -25,6 +25,9 @@ const SPEEDS = [1, 5, 10, 30, 60]
 const DEFAULT_SPEED = 10
 /** how long a finished car lingers while it fades out the exit */
 const EXIT_MS = 700
+/** one frame never advances past a whole stay at the quickest station (5 min),
+ *  so every car is drawn at every stop even at 60× on a slow frame rate */
+const MAX_SIM_MIN_PER_FRAME = 4
 const MAX_RATE = 12
 /** the finishing-rate readout averages over this many recent sim-minutes */
 const RATE_WINDOW_MIN = 240
@@ -46,7 +49,8 @@ export default function Ch7aCarWash() {
   // starts paused so students can set the dials first, then hit Play
   const [running, setRunning] = useState(false)
   const [showAnswers, setShowAnswers] = useState(false)
-  const [annotate, setAnnotate] = useState<Annotation>('duration')
+  const [showFlow, setShowFlow] = useState(false)
+  const [showBottlenecks, setShowBottlenecks] = useState(false)
   const [, frameTick] = useReducer((x: number) => x + 1, 0)
 
   const simRef = useRef<CarWashSim | null>(null)
@@ -75,7 +79,7 @@ export default function Ch7aCarWash() {
       const sim = simRef.current!
       const dtReal = Math.min(0.1, (t - last) / 1000)
       last = t
-      sim.advance(sim.now + dtReal * speedRef.current)
+      sim.advance(sim.now + Math.min(MAX_SIM_MIN_PER_FRAME, dtReal * speedRef.current))
       for (const car of sim.finished.splice(0)) {
         exitingRef.current.push({ car, realAt: t })
       }
@@ -265,36 +269,35 @@ export default function Ch7aCarWash() {
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold text-stone-900">The wash</h2>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-stone-500">Annotate with</span>
-            <div className="flex overflow-hidden rounded-md border border-stone-300">
-              {(
-                [
-                  ['duration', 'Duration'],
-                  ['flow', 'Flow'],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setAnnotate(key)}
-                  aria-pressed={annotate === key}
-                  className={[
-                    'px-2.5 py-1 font-medium',
-                    annotate === key
-                      ? 'bg-garnet-800 text-white'
-                      : 'bg-white text-stone-700 hover:bg-stone-50',
-                  ].join(' ')}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <span className="text-stone-500">
-              {annotate === 'flow' ? 'cars per hour' : 'minutes per car'}
-            </span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <label className="flex cursor-pointer items-center gap-1.5 text-stone-700">
+              <input
+                type="checkbox"
+                checked={showFlow}
+                onChange={(e) => setShowFlow(e.target.checked)}
+                className="accent-garnet-800"
+              />
+              Show flow
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 text-stone-700">
+              <input
+                type="checkbox"
+                checked={showBottlenecks}
+                onChange={(e) => setShowBottlenecks(e.target.checked)}
+                className="accent-garnet-800"
+              />
+              Identify bottlenecks
+            </label>
           </div>
         </div>
-        <Network view={view} flows={flows} annotate={annotate} showAnswers={showAnswers} />
+        <Network
+          view={view}
+          flows={flows}
+          speed={speed}
+          showFlow={showFlow}
+          showBottlenecks={showBottlenecks}
+          showAnswers={showAnswers}
+        />
         <p className="mt-2 text-xs text-stone-500">
           Each line shows its first {QUEUE_VISIBLE} cars; the badge above it counts them all.
         </p>

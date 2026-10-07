@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import {
+  MIX_LIMITS,
   STATIONS,
   STATION_BY_ID,
   type CarView,
@@ -15,10 +16,7 @@ export const TYPE_COLOR: Record<WashType, string> = {
 }
 const GARNET = '#a52547'
 
-/** how each station is labeled: its time per car, or its cars per hour */
-export type Annotation = 'duration' | 'flow'
-
-const W = 1100
+const W = 1160
 const H = 380
 const R = 30 // station radius
 const DOT_R = 6
@@ -39,6 +37,9 @@ const NODE: Record<string, { x: number; y: number }> = {
   A8: { x: 1040, y: 190 },
 }
 const SPLIT = { x: 395, y: 190, hw: 50, hh: 44 }
+
+/** A8 has arrows above and below it, so its labels go off to the right */
+const LABEL_SIDE: Record<string, 'top' | 'right'> = { A8: 'right' }
 
 /** the slide's pastel per station */
 const FILL: Record<string, string> = {
@@ -68,6 +69,16 @@ const EDGES = [
   `M${NODE.A8.x + R},${NODE.A8.y} H${W - 4}`,
 ]
 
+/** which stations cap each leg of the wash, and what to call them */
+const BOTTLENECK_TAG: Record<string, string> = {
+  [MIX_LIMITS.standard.stationId]: 'Standard bottleneck',
+  [MIX_LIMITS.deluxe.stationId]: 'Deluxe bottleneck',
+  [MIX_LIMITS.total.stationId]: 'Process bottleneck',
+}
+
+/** the quickest station — a dot must finish gliding in before it can leave */
+const SHORTEST_MIN = Math.min(...STATIONS.map((s) => s.minutes))
+
 /** center of the pile of waiting cars in front of a station */
 const pileCenter = (id: string) => ({
   x: NODE[id].x - R - 14 - ((QUEUE_COLS - 1) * 13) / 2,
@@ -87,29 +98,38 @@ const fmtRate = (v: number) =>
   v.toLocaleString('en-US', { maximumFractionDigits: 1 })
 
 /**
- * The wash as a network. Stations are circles that darken while busy and
- * are labeled with either their minutes per car or their cars per hour;
- * each has a small pile of waiting cars in front of it (the first fifteen in
- * line) with a badge carrying the true count, so a line that outgrows the
- * pile keeps counting. With answers on, stations where cars pile up turn
- * garnet and show how fast the line grows.
+ * The wash as a network. Each station is a circle with its minutes per car
+ * and a small pile of waiting cars in front of it (the first fifteen in
+ * line) under a badge carrying the true count, so a line that outgrows the
+ * pile keeps counting. Optional overlays: the station's flow in cars per
+ * hour beside it, garnet rings on the three bottlenecks, and (with answers
+ * on) how fast each line grows.
  */
 export const Network = memo(function Network({
   view,
   flows,
-  annotate,
+  speed,
+  showFlow,
+  showBottlenecks,
   showAnswers,
 }: {
   view: SimView
   flows: FluidResult
-  annotate: Annotation
+  /** sim-minutes per real second — dots glide faster at higher speeds */
+  speed: number
+  showFlow: boolean
+  showBottlenecks: boolean
   showAnswers: boolean
 }) {
+  // glide for well under one stay at the quickest station, so a car is
+  // seen at every stop even at 60×
+  const glideMs = Math.min(450, Math.round((0.6 * SHORTEST_MIN * 1000) / speed))
+
   return (
     <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="block h-auto w-full min-w-[720px]"
+        className="block h-auto w-full min-w-[760px]"
         role="img"
         aria-label="Keith's Car Wash: eight stations with cars moving through them"
       >
@@ -173,13 +193,12 @@ export const Network = memo(function Network({
         {/* stations */}
         {STATIONS.map((s) => {
           const n = NODE[s.id]
-          const busy = view.busy[s.id]
           const waiting = view.queueLength[s.id]
           const flow = flows.byId[s.id]
           const piling = showAnswers && flow.accumulation > 0.005
           const pile = pileCenter(s.id)
-          const value = annotate === 'flow' ? `${fmtRate(flow.capacity)} cars` : `${s.minutes} min`
-          const unit = annotate === 'flow' ? 'per hour' : 'per car'
+          const tag = showBottlenecks ? BOTTLENECK_TAG[s.id] : undefined
+          const right = LABEL_SIDE[s.id] === 'right'
           return (
             <g key={s.id}>
               <circle
@@ -187,9 +206,8 @@ export const Network = memo(function Network({
                 cy={n.y}
                 r={R}
                 fill={FILL[s.id]}
-                stroke={piling ? GARNET : busy ? '#44403c' : '#a8a29e'}
-                strokeWidth={piling ? 3 : 2}
-                strokeDasharray={busy || piling ? undefined : '4 3'}
+                stroke={tag ? GARNET : '#78716c'}
+                strokeWidth={tag ? 3.5 : 2}
               />
               <text
                 x={n.x}
@@ -201,17 +219,55 @@ export const Network = memo(function Network({
               >
                 {s.id}
               </text>
-              <text x={n.x} y={n.y + 6} textAnchor="middle" fontSize={11.5} fill="#1c1917">
-                {value}
+              <text x={n.x} y={n.y + 19} textAnchor="middle" fontSize={11} fill="#1c1917">
+                {s.minutes} min
               </text>
-              <text x={n.x} y={n.y + 18} textAnchor="middle" fontSize={9.5} fill="#44403c">
-                {unit}
-              </text>
+
+              {/* the station as a flow */}
+              {showFlow && (
+                <g
+                  transform={
+                    right
+                      ? `translate(${n.x + R + 8 + 36}, ${n.y - 24})`
+                      : `translate(${n.x}, ${n.y - R - 18})`
+                  }
+                >
+                  <rect x={-36} y={-10} width={72} height={20} rx={10} fill="#fff" stroke="#d6d3d1" />
+                  <text y={4} textAnchor="middle" fontSize={11} fontWeight={600} fill="#44403c">
+                    {fmtRate(flow.capacity)} cars / hr
+                  </text>
+                </g>
+              )}
+
+              {/* which leg this station caps */}
+              {tag &&
+                (right ? (
+                  <text
+                    x={n.x + R + 8}
+                    y={n.y + 26}
+                    fontSize={11}
+                    fontWeight={700}
+                    fill={GARNET}
+                  >
+                    {tag}
+                  </text>
+                ) : (
+                  <text
+                    x={n.x}
+                    y={n.y + R + 18}
+                    textAnchor="middle"
+                    fontSize={11}
+                    fontWeight={700}
+                    fill={GARNET}
+                  >
+                    {tag}
+                  </text>
+                ))}
 
               {/* how many are in line */}
               {waiting > 0 && (
                 <g transform={`translate(${pile.x}, ${n.y - 38})`}>
-                  <rect x={-36} y={-10} width={72} height={20} rx={10} fill="#292524" />
+                  <rect x={-34} y={-10} width={68} height={20} rx={10} fill="#292524" />
                   <text y={4} textAnchor="middle" fontSize={11} fontWeight={600} fill="#fff">
                     {waiting.toLocaleString('en-US')} waiting
                   </text>
@@ -242,7 +298,7 @@ export const Network = memo(function Network({
               key={c.id}
               style={{
                 transform: `translate(${x}px, ${y}px)`,
-                transition: 'transform 450ms ease-in-out, opacity 450ms ease-in',
+                transition: `transform ${glideMs}ms ease-in-out, opacity ${glideMs}ms ease-in`,
                 opacity: c.role === 'done' ? 0 : 1,
               }}
             >
