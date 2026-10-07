@@ -86,8 +86,17 @@ export const chapters: Chapter[] = [
     exam: 2,
   },
   {
-    slug: 'ch7',
-    label: 'Chapter 7',
+    slug: 'ch7a',
+    label: 'Chapter 7A',
+    title: 'Flow Through a Process',
+    description:
+      'Keith’s Car Wash — turn minutes per car into cars per hour, watch the lines form, and find how much the whole system can finish.',
+    status: 'available',
+    exam: 2,
+  },
+  {
+    slug: 'ch7b',
+    label: 'Chapter 7B',
     title: 'Constraint Management',
     description:
       'Find the bottleneck and pick the product mix — traditional method vs. bottleneck method.',

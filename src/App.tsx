@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
 import Launcher from './pages/Launcher'
 import ComingSoon from './pages/ComingSoon'
@@ -11,7 +11,8 @@ import Ch5LeanSystems from './pages/demos/ch5'
 import Ch6CapacityPlanning from './pages/demos/ch6'
 import SuppBWaitingLines from './pages/demos/supp-b'
 import SuppDLinearProgramming from './pages/demos/supp-d'
-import Ch7ConstraintManagement from './pages/demos/ch7'
+import Ch7aCarWash from './pages/demos/ch7a'
+import Ch7bConstraintManagement from './pages/demos/ch7b'
 import Ch8ProjectManagement from './pages/demos/ch8'
 import Ch9Forecasting from './pages/demos/ch9'
 import Ch10Inventory from './pages/demos/ch10'
@@ -50,7 +51,10 @@ export default function App() {
           <Route path="/ch6" element={<Ch6CapacityPlanning />} />
           <Route path="/supp-b" element={<SuppBWaitingLines />} />
           <Route path="/supp-d" element={<SuppDLinearProgramming />} />
-          <Route path="/ch7" element={<Ch7ConstraintManagement />} />
+          <Route path="/ch7a" element={<Ch7aCarWash />} />
+          <Route path="/ch7b" element={<Ch7bConstraintManagement />} />
+          {/* Chapter 7 became 7A + 7B; keep old links working */}
+          <Route path="/ch7" element={<Navigate to="/ch7b" replace />} />
           <Route path="/ch8" element={<Ch8ProjectManagement />} />
           <Route path="/ch9" element={<Ch9Forecasting />} />
           <Route path="/ch10" element={<Ch10Inventory />} />

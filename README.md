@@ -22,7 +22,8 @@ _Operations Management: Processes and Supply Chains_. Chapters 2, 11, 12,
 | `/ch5` | Chapter 5 | Lean Systems |
 | `/ch6` | Chapter 6 | Capacity Planning |
 | `/supp-b` | Supplement B | Waiting Lines |
-| `/ch7` | Chapter 7 | Constraint Management |
+| `/ch7a` | Chapter 7A | Flow Through a Process (Keith’s Car Wash) |
+| `/ch7b` | Chapter 7B | Constraint Management (Diablo) |
 | `/supp-d` | Supplement D | Linear Programming |
 | `/ch8` | Chapter 8 | Project Management |
 | `/ch9` | Chapter 9 | Forecasting |

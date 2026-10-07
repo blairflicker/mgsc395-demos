@@ -42,6 +42,21 @@ body {
   animation: mm1-arrive 0.35s ease-out;
 }
 
+/* cars fading in at the car wash (Chapter 7A) — the dot's group owns the
+   transform transition, so this only touches opacity */
+@keyframes ch7a-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ch7a-arrive {
+  animation: ch7a-arrive 0.3s ease-out;
+}
+
 /* distance lines on the facility-location map thicken on hover */
 .dist-group:hover .dist-line {
   stroke: #292524;

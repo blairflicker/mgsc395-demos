@@ -51,7 +51,7 @@ export default function Ch7ConstraintManagement() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <DemoHeader label="Chapter 7 · Constraint Management" title="The Diablo Problem">
+      <DemoHeader label="Chapter 7B · Constraint Management" title="The Diablo Problem">
         Diablo Electronics cannot meet all of its demand — pick a production
         plan and watch where the workers&rsquo; minutes go.
       </DemoHeader>
