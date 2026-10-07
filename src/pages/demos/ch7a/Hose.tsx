@@ -11,9 +11,8 @@ const PIPE_EDGE = '#78716c'
 /** vertical gradients: lit along the top, dark underneath, so a pipe reads as a cylinder */
 const PIPE_FILL = 'url(#ch7a-pipe)'
 const KINK_FILL = 'url(#ch7a-kink)'
-/** the same gradients a shade darker, for the seams at each joint */
-const PIPE_SEAM = 'url(#ch7a-pipe-seam)'
-const KINK_SEAM = 'url(#ch7a-kink-seam)'
+/** reducers overlap their neighbours by this much so no hairline shows at a joint */
+const SEAM = 0.6
 
 /** px of pipe diameter per car per hour */
 const K = 8
@@ -62,15 +61,6 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
   const top = segs.flatMap((s) => [`${s.x1},${Y - s.r}`, `${s.x2},${Y - s.r}`])
   const bottom = segs.flatMap((s) => [`${s.x1},${Y + s.r}`, `${s.x2},${Y + s.r}`])
 
-  // every joint: both ends of a body take that body's own (darker) shading
-  const joints = segs.flatMap((s, i) => {
-    const seam = s.id === bottleneck ? KINK_SEAM : PIPE_SEAM
-    const ends: { x: number; r: number; seam: string }[] = []
-    if (i > 0) ends.push({ x: s.x1, r: s.r, seam })
-    if (i < segs.length - 1) ends.push({ x: s.x2, r: s.r, seam })
-    return ends
-  })
-
   return (
     <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
       <svg
@@ -95,18 +85,6 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
             <stop offset="0.5" stopColor="#ad3252" />
             <stop offset="1" stopColor="#560a22" />
           </linearGradient>
-          <linearGradient id="ch7a-pipe-seam" gradientUnits="userSpaceOnUse" x1={0} y1={Y - maxR} x2={0} y2={Y + maxR}>
-            <stop offset="0" stopColor="#b9b5b2" />
-            <stop offset="0.28" stopColor="#9b958f" />
-            <stop offset="0.5" stopColor="#817b76" />
-            <stop offset="1" stopColor="#433e3a" />
-          </linearGradient>
-          <linearGradient id="ch7a-kink-seam" gradientUnits="userSpaceOnUse" x1={0} y1={Y - maxR} x2={0} y2={Y + maxR}>
-            <stop offset="0" stopColor="#cb7085" />
-            <stop offset="0.28" stopColor="#aa3350" />
-            <stop offset="0.5" stopColor="#8c213f" />
-            <stop offset="1" stopColor="#3b0515" />
-          </linearGradient>
           <linearGradient id="ch7a-mouth" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="#3f3a37" />
             <stop offset="1" stopColor="#8a837d" />
@@ -130,7 +108,7 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
             <g key={s.id}>
               {prev && (
                 <path
-                  d={`M${prev.x2},${Y - prev.r} L${s.x1},${Y - s.r} ${capDown(s.x1, s.r)} L${prev.x2},${Y + prev.r} ${capUp(prev.x2, prev.r)} Z`}
+                  d={`M${prev.x2 - SEAM},${Y - prev.r} L${s.x1 + SEAM},${Y - s.r} ${capDown(s.x1 + SEAM, s.r)} L${prev.x2 - SEAM},${Y + prev.r} ${capUp(prev.x2 - SEAM, prev.r)} Z`}
                   fill={fill}
                 />
               )}
@@ -141,17 +119,6 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
             </g>
           )
         })}
-
-        {/* seams: a hair wider than the gap between pieces, shaded like the pipe */}
-        {joints.map((j) => (
-          <path
-            key={j.x}
-            d={`M${j.x},${Y - j.r} ${capDown(j.x, j.r)}`}
-            fill="none"
-            stroke={j.seam}
-            strokeWidth={1.8}
-          />
-        ))}
 
         {/* far end */}
         <path
