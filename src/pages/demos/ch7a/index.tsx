@@ -54,6 +54,27 @@ function fmtClock(minutes: number): string {
 const who = (id: string) =>
   servedBy(id).length === 2 ? 'both' : WASH_LABEL[servedBy(id)[0]]
 
+/** one figure under the wash: label, the number on its own line, then a note */
+function Readout({
+  label,
+  value,
+  children,
+}: {
+  label: string
+  value: string
+  children?: React.ReactNode
+}) {
+  return (
+    <div>
+      <div className="text-xs font-semibold text-stone-500 uppercase">{label}</div>
+      <div className="text-lg leading-tight text-stone-800 tabular-nums">{value}</div>
+      {children && (
+        <div className="mt-0.5 text-xs leading-snug text-stone-500 tabular-nums">{children}</div>
+      )}
+    </div>
+  )
+}
+
 export default function Ch7aCarWash() {
   const [rates, setRates] = useState<Rates>({ ...CLASS_RATES })
   const [speed, setSpeed] = useState(DEFAULT_SPEED)
@@ -315,65 +336,42 @@ export default function Ch7aCarWash() {
           Each line shows its first {QUEUE_VISIBLE} cars; the badge above it counts them all.
         </p>
 
-        <div className="mt-4 grid gap-3 border-t border-stone-100 pt-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
-          <div>
-            <div className="text-xs font-semibold text-stone-500 uppercase">Arrived</div>
-            <div className="text-lg text-stone-800 tabular-nums">
-              {totalRate(sim.arrived).toLocaleString('en-US')}
-              <span className="ml-2 text-xs text-stone-500">
-                {sim.arrived.standard.toLocaleString('en-US')} S ·{' '}
-                {sim.arrived.deluxe.toLocaleString('en-US')} D
-              </span>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-stone-500 uppercase">Finished</div>
-            <div className="text-lg text-stone-800 tabular-nums">
-              {finished.toLocaleString('en-US')}
-              <span className="ml-2 text-xs text-stone-500">
-                {sim.completed.standard.toLocaleString('en-US')} S ·{' '}
-                {sim.completed.deluxe.toLocaleString('en-US')} D
-              </span>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-stone-500 uppercase">
-              Finishing rate, last {RATE_WINDOW_MIN / 60} h
-            </div>
-            <div className="text-lg text-stone-800 tabular-nums">
-              {recentRate === null ? '—' : `${recentRate.toFixed(1)} / hr`}
-              <span className="ml-2 text-xs text-stone-500">
-                {recentRate === null ? 'once cars finish' : 'cars finished per hour, recently'}
-              </span>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-stone-500 uppercase">
-              Time in the wash, last {RATE_WINDOW_MIN / 60} h
-            </div>
-            <div className="text-lg text-stone-800 tabular-nums">
-              {recentTimes === null ? '—' : fmtDuration(recentTimes.flow)}
-              <span className="ml-2 text-xs text-stone-500">
-                {recentTimes === null
-                  ? 'arriving to driving out'
-                  : `${fmtDuration(recentTimes.flow - recentTimes.wait)} being washed + ${fmtDuration(recentTimes.wait)} waiting`}
-              </span>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-stone-500 uppercase">
-              In the wash now
-            </div>
-            <div className="text-lg text-stone-800 tabular-nums">
-              {wip.toLocaleString('en-US')}
-              <span className="ml-2 text-xs text-stone-500">
-                {Object.values(simState.queueLength)
-                  .reduce((a, b) => a + b, 0)
-                  .toLocaleString('en-US')}{' '}
-                waiting
-              </span>
-            </div>
-          </div>
+        <div className="mt-4 grid gap-4 border-t border-stone-100 pt-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+          <Readout label="Arrived" value={totalRate(sim.arrived).toLocaleString('en-US')}>
+            {sim.arrived.standard.toLocaleString('en-US')} Standard ·{' '}
+            {sim.arrived.deluxe.toLocaleString('en-US')} Deluxe
+          </Readout>
+          <Readout label="Finished" value={finished.toLocaleString('en-US')}>
+            {sim.completed.standard.toLocaleString('en-US')} Standard ·{' '}
+            {sim.completed.deluxe.toLocaleString('en-US')} Deluxe
+          </Readout>
+          <Readout
+            label={`Finishing rate, last ${RATE_WINDOW_MIN / 60} h`}
+            value={recentRate === null ? '—' : `${recentRate.toFixed(1)} / hr`}
+          >
+            {recentRate === null ? 'once cars finish' : 'cars finished per hour, recently'}
+          </Readout>
+          <Readout
+            label={`Time in the wash, last ${RATE_WINDOW_MIN / 60} h`}
+            value={recentTimes === null ? '—' : fmtDuration(recentTimes.flow)}
+          >
+            {recentTimes === null ? (
+              'arriving to driving out'
+            ) : (
+              <>
+                <span className="block">
+                  {fmtDuration(recentTimes.flow - recentTimes.wait)} being washed
+                </span>
+                <span className="block">+ {fmtDuration(recentTimes.wait)} waiting in line</span>
+              </>
+            )}
+          </Readout>
+          <Readout label="In the wash now" value={wip.toLocaleString('en-US')}>
+            {Object.values(simState.queueLength)
+              .reduce((a, b) => a + b, 0)
+              .toLocaleString('en-US')}{' '}
+            waiting in line
+          </Readout>
         </div>
       </div>
 
