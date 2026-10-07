@@ -18,36 +18,25 @@ const W = 1000
 const H = 250
 const Y = 126 // pipe centerline
 const X0 = 70
-const LEN = 116
+const LEN = 112
+const REDUCER = 30
 /** how squashed the round ends are — the pipe seen slightly from the side */
-const ROUND = 0.18
-/** shapes overlap by this much so no hairline shows between them */
-const SEAM = 0.6
+const ROUND = 0.16
 
 const fmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 1 })
 
-interface Seg {
-  id: string
-  cap: number
-  /** diameter, px */
-  d: number
-  /** horizontal radius of this pipe's round ends */
-  rx: number
-  /** body extents */
-  x1: number
-  x2: number
-  /** this pipe is wider than the one before it, so it shows a round face
-   *  at x1 that the narrower pipe runs into */
-  face: boolean
-}
+/** rightward semi-ellipse from (x, Y−r) down to (x, Y+r) — a pipe's convex end */
+const capDown = (x: number, r: number) => `A${r * ROUND},${r} 0 0 1 ${x},${Y + r}`
+/** the same curve traced upward, from (x, Y+r) back to (x, Y−r) */
+const capUp = (x: number, r: number) => `A${r * ROUND},${r} 0 0 0 ${x},${Y - r}`
 
 /**
  * One wash's route as a straight hose: each station is a length of pipe
- * as wide as its flow (cars per hour). Every pipe ends in a domed cap;
- * a narrower pipe emerges from the dome's surface, and a wider pipe
- * presents a round face that the narrower one runs into — so the hose
- * steps down and up like fitted plumbing. With answers on, the narrowest
- * pipe and the dome squeezing into it are garnet: the kink.
+ * as wide as its flow (cars per hour), joined by straight reducers and
+ * expanders. Every joint is a rightward curve — the end of one piece
+ * seen slightly from the side — so the pieces read as fitted plumbing.
+ * With answers on, the narrowest pipe and the reducer squeezing into it
+ * are garnet: the kink.
  */
 export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boolean }) {
   const ids = ROUTE[type]
@@ -55,49 +44,25 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
   const minCap = Math.min(...caps)
   const bottleneck = showAnswers ? ids[caps.indexOf(minCap)] : null
 
-  // lay the pipes out left to right; each transition is a curve, so the
-  // next body starts where it meets the previous dome (narrowing) or where
-  // its own face meets the previous body (widening)
-  const segs: Seg[] = []
   let x = X0
-  ids.forEach((id, i) => {
-    const d = K * caps[i]
-    const rx = d * ROUND
-    const prev = segs[i - 1]
-    let face = false
-    if (prev) {
-      if (d < prev.d) {
-        // emerge from the previous dome where it is this pipe's height
-        x = prev.x2 + prev.rx * Math.sqrt(1 - (d / prev.d) ** 2)
-      } else if (d > prev.d) {
-        // this pipe's face sits so its surface meets the previous body end
-        x = prev.x2 + rx * Math.sqrt(1 - (prev.d / d) ** 2)
-        face = true
-      } else {
-        x = prev.x2
-      }
-    }
-    segs.push({ id, cap: caps[i], d, rx, x1: x, x2: x + LEN, face })
+  const segs = ids.map((id, i) => {
+    const s = { id, x1: x, x2: x + LEN, r: (K * caps[i]) / 2, cap: caps[i] }
+    x += LEN + REDUCER
+    return s
   })
+  const end = x - REDUCER
   const first = segs[0]
   const last = segs[segs.length - 1]
 
-  // the silhouette: top edge left to right, round the far cap, bottom edge
-  let top = `M${X0},${Y - first.d / 2}`
-  let bottom = `M${X0},${Y + first.d / 2}`
+  // top and bottom silhouettes: straight along bodies, sloped across reducers
+  const top = segs.flatMap((s) => [`${s.x1},${Y - s.r}`, `${s.x2},${Y - s.r}`])
+  const bottom = segs.flatMap((s) => [`${s.x1},${Y + s.r}`, `${s.x2},${Y + s.r}`])
+
+  // every joint, for the faint curved seam drawn over it
+  const joints: { x: number; r: number }[] = []
   segs.forEach((s, i) => {
-    top += ` H${s.x2}`
-    bottom += ` H${s.x2}`
-    const next = segs[i + 1]
-    if (!next) {
-      top += ` A${s.rx},${s.d / 2} 0 0 1 ${s.x2},${Y + s.d / 2}`
-    } else if (next.d < s.d) {
-      top += ` A${s.rx},${s.d / 2} 0 0 1 ${next.x1},${Y - next.d / 2}`
-      bottom += ` A${s.rx},${s.d / 2} 0 0 0 ${next.x1},${Y + next.d / 2}`
-    } else if (next.d > s.d) {
-      top += ` A${next.rx},${next.d / 2} 0 0 1 ${next.x1},${Y - next.d / 2}`
-      bottom += ` A${next.rx},${next.d / 2} 0 0 0 ${next.x1},${Y + next.d / 2}`
-    }
+    if (i > 0) joints.push({ x: s.x1, r: s.r })
+    if (i < segs.length - 1) joints.push({ x: s.x2, r: s.r })
   })
 
   return (
@@ -126,53 +91,64 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
         </defs>
 
         {/* in */}
-        <text x={X0 - first.rx - 12} y={Y - 4} textAnchor="end" fontSize={11} fill="#78716c">
+        <text x={X0 - first.r * ROUND - 12} y={Y - 4} textAnchor="end" fontSize={11} fill="#78716c">
           {WASH_LABEL[type]}
         </text>
-        <text x={X0 - first.rx - 12} y={Y + 10} textAnchor="end" fontSize={11} fill="#78716c">
+        <text x={X0 - first.r * ROUND - 12} y={Y + 10} textAnchor="end" fontSize={11} fill="#78716c">
           cars in →
         </text>
 
-        {/* pipe bodies, left to right: round face (if wider), body, dome */}
+        {/* bodies and reducers — each piece bounded by rightward curves */}
         {segs.map((s, i) => {
-          const fill = s.id === bottleneck ? KINK_FILL : PIPE_FILL
-          const isLast = i === segs.length - 1
+          const hot = s.id === bottleneck
+          const prev = segs[i - 1]
+          const fill = hot ? KINK_FILL : PIPE_FILL
           return (
             <g key={s.id}>
-              {s.face && <ellipse cx={s.x1} cy={Y} rx={s.rx} ry={s.d / 2} fill={fill} />}
-              <rect
-                x={s.x1 - SEAM}
-                y={Y - s.d / 2}
-                width={LEN + 2 * SEAM}
-                height={s.d}
-                fill={fill}
-              />
-              <path
-                d={`M${s.x2 - SEAM},${Y - s.d / 2} A${s.rx},${s.d / 2} 0 0 1 ${s.x2 - SEAM},${Y + s.d / 2} Z`}
-                fill={fill}
-              />
-              {isLast && (
+              {prev && (
                 <path
-                  d={`M${s.x2},${Y - s.d / 2} A${s.rx},${s.d / 2} 0 0 1 ${s.x2},${Y + s.d / 2}`}
-                  fill="none"
-                  stroke={PIPE_EDGE}
-                  strokeWidth={1.2}
+                  d={`M${prev.x2},${Y - prev.r} L${s.x1},${Y - s.r} ${capDown(s.x1, s.r)} L${prev.x2},${Y + prev.r} ${capUp(prev.x2, prev.r)} Z`}
+                  fill={fill}
                 />
               )}
+              <path
+                d={`M${s.x1},${Y - s.r} H${s.x2} ${capDown(s.x2, s.r)} H${s.x1} ${capUp(s.x1, s.r)} Z`}
+                fill={fill}
+              />
             </g>
           )
         })}
 
-        {/* silhouette */}
-        <path d={top} fill="none" stroke={PIPE_EDGE} strokeWidth={1.2} strokeLinejoin="round" />
-        <path d={bottom} fill="none" stroke={PIPE_EDGE} strokeWidth={1.2} strokeLinejoin="round" />
+        {/* the curved seams at every joint */}
+        {joints.map((j, i) => (
+          <path
+            key={i}
+            d={`M${j.x},${Y - j.r} ${capDown(j.x, j.r)}`}
+            fill="none"
+            stroke={PIPE_EDGE}
+            strokeWidth={1}
+            opacity={0.45}
+          />
+        ))}
+
+        {/* far end */}
+        <path
+          d={`M${end},${Y - last.r} ${capDown(end, last.r)}`}
+          fill="none"
+          stroke={PIPE_EDGE}
+          strokeWidth={1.2}
+        />
+
+        {/* top and bottom outlines */}
+        <polyline points={top.join(' ')} fill="none" stroke={PIPE_EDGE} strokeWidth={1.2} strokeLinejoin="round" />
+        <polyline points={bottom.join(' ')} fill="none" stroke={PIPE_EDGE} strokeWidth={1.2} strokeLinejoin="round" />
 
         {/* the open mouth */}
         <ellipse
           cx={X0}
           cy={Y}
-          rx={first.rx}
-          ry={first.d / 2}
+          rx={first.r * ROUND}
+          ry={first.r}
           fill="url(#ch7a-mouth)"
           stroke={PIPE_EDGE}
           strokeWidth={1.2}
@@ -181,12 +157,12 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
         {/* labels */}
         {segs.map((s) => {
           const hot = s.id === bottleneck
-          const cx = (s.x1 + s.x2) / 2
+          const cx = s.x1 + LEN / 2
           return (
             <g key={s.id}>
               <text
                 x={cx}
-                y={Y - s.d / 2 - 22}
+                y={Y - s.r - 22}
                 textAnchor="middle"
                 fontSize={13}
                 fontWeight={700}
@@ -196,21 +172,21 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
               </text>
               <text
                 x={cx}
-                y={Y - s.d / 2 - 8}
+                y={Y - s.r - 8}
                 textAnchor="middle"
                 fontSize={11.5}
                 fill={hot ? GARNET : '#44403c'}
               >
                 {fmt(s.cap)} cars / hr
               </text>
-              <text x={cx} y={Y + s.d / 2 + 15} textAnchor="middle" fontSize={10.5} fill="#78716c">
+              <text x={cx} y={Y + s.r + 15} textAnchor="middle" fontSize={10.5} fill="#78716c">
                 {STATION_BY_ID[s.id].minutes} min per car
               </text>
               {hot && (
                 <>
                   <text
                     x={cx}
-                    y={Y + s.d / 2 + 31}
+                    y={Y + s.r + 31}
                     textAnchor="middle"
                     fontSize={11.5}
                     fontWeight={700}
@@ -218,7 +194,7 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
                   >
                     “the kink”
                   </text>
-                  <text x={cx} y={Y + s.d / 2 + 45} textAnchor="middle" fontSize={10.5} fill={GARNET}>
+                  <text x={cx} y={Y + s.r + 45} textAnchor="middle" fontSize={10.5} fill={GARNET}>
                     (bottleneck)
                   </text>
                 </>
@@ -228,11 +204,11 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
         })}
 
         {/* out */}
-        <text x={last.x2 + last.rx + 14} y={Y - 4} fontSize={11} fill="#78716c">
+        <text x={end + last.r * ROUND + 14} y={Y - 4} fontSize={11} fill="#78716c">
           at most
         </text>
         <text
-          x={last.x2 + last.rx + 14}
+          x={end + last.r * ROUND + 14}
           y={Y + 11}
           fontSize={12}
           fontWeight={700}
