@@ -39,6 +39,11 @@ const RATE_STEP = 0.5
 const fmt1 = (x: number) =>
   x.toLocaleString('en-US', { maximumFractionDigits: 1 })
 
+/** minutes under 100 as minutes, longer spans as hours */
+function fmtDuration(minutes: number): string {
+  return minutes < 100 ? `${Math.round(minutes)} min` : `${(minutes / 60).toFixed(1)} h`
+}
+
 function fmtClock(minutes: number): string {
   const total = Math.floor(minutes)
   const h = Math.floor(total / 60)
@@ -57,7 +62,6 @@ export default function Ch7aCarWash() {
   const [showAnswers, setShowAnswers] = useState(false)
   const [hoseLeg, setHoseLeg] = useState<WashType>('standard')
   const [showFlow, setShowFlow] = useState(false)
-  const [showBottlenecks, setShowBottlenecks] = useState(false)
   const [, frameTick] = useReducer((x: number) => x + 1, 0)
 
   const simRef = useRef<CarWashSim | null>(null)
@@ -119,6 +123,7 @@ export default function Ch7aCarWash() {
   const arriving = totalRate(rates)
   const finished = totalRate(sim.completed)
   const recentRate = sim.recentRate(RATE_WINDOW_MIN)
+  const recentTimes = sim.recentTimes(RATE_WINDOW_MIN)
   const wip = sim.wip()
   const piling = flows.stations.filter((f) => f.accumulation > 0.005)
   const hoseCap = Math.min(...ROUTE[hoseLeg].map((id) => capacityPerHour(STATION_BY_ID[id])))
@@ -163,8 +168,8 @@ export default function Ch7aCarWash() {
           {showAnswers ? 'Hide answers' : 'Show answers'}
         </button>
         <span className="text-xs text-stone-500">
-          Answers mark where lines grow and how fast, extend the data table
-          with the flows, and show what the wash can finish.
+          Answers mark the bottlenecks, extend the data table with the flows,
+          and show what the wash can finish.
         </span>
       </div>
 
@@ -297,7 +302,6 @@ export default function Ch7aCarWash() {
           <h2 className="text-lg font-semibold text-stone-900">The wash</h2>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {checkbox('Show flow', showFlow, setShowFlow)}
-            {checkbox('Identify bottlenecks', showBottlenecks, setShowBottlenecks)}
           </div>
         </div>
         <Network
@@ -305,14 +309,13 @@ export default function Ch7aCarWash() {
           flows={flows}
           speed={speed}
           showFlow={showFlow}
-          showBottlenecks={showBottlenecks}
           showAnswers={showAnswers}
         />
         <p className="mt-2 text-xs text-stone-500">
           Each line shows its first {QUEUE_VISIBLE} cars; the badge above it counts them all.
         </p>
 
-        <div className="mt-4 grid gap-3 border-t border-stone-100 pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid gap-3 border-t border-stone-100 pt-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
           <div>
             <div className="text-xs font-semibold text-stone-500 uppercase">Arrived</div>
             <div className="text-lg text-stone-800 tabular-nums">
@@ -341,6 +344,19 @@ export default function Ch7aCarWash() {
               {recentRate === null ? '—' : `${recentRate.toFixed(1)} / hr`}
               <span className="ml-2 text-xs text-stone-500">
                 {recentRate === null ? 'once cars finish' : 'cars finished per hour, recently'}
+              </span>
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-stone-500 uppercase">
+              Time in the wash, last {RATE_WINDOW_MIN / 60} h
+            </div>
+            <div className="text-lg text-stone-800 tabular-nums">
+              {recentTimes === null ? '—' : fmtDuration(recentTimes.flow)}
+              <span className="ml-2 text-xs text-stone-500">
+                {recentTimes === null
+                  ? 'arriving to driving out'
+                  : `${fmtDuration(recentTimes.wait)} of it waiting in line`}
               </span>
             </div>
           </div>

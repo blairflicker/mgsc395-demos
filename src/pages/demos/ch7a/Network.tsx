@@ -110,7 +110,6 @@ export const Network = memo(function Network({
   flows,
   speed,
   showFlow,
-  showBottlenecks,
   showAnswers,
 }: {
   view: SimView
@@ -118,7 +117,7 @@ export const Network = memo(function Network({
   /** sim-minutes per real second — dots glide faster at higher speeds */
   speed: number
   showFlow: boolean
-  showBottlenecks: boolean
+  /** answers ring the three bottlenecks in garnet */
   showAnswers: boolean
 }) {
   // glide for well under one stay at the quickest station, so a car is
@@ -195,9 +194,8 @@ export const Network = memo(function Network({
           const n = NODE[s.id]
           const waiting = view.queueLength[s.id]
           const flow = flows.byId[s.id]
-          const piling = showAnswers && flow.accumulation > 0.005
           const pile = pileCenter(s.id)
-          const tag = showBottlenecks ? BOTTLENECK_TAG[s.id] : undefined
+          const tag = showAnswers ? BOTTLENECK_TAG[s.id] : undefined
           const right = LABEL_SIDE[s.id] === 'right'
           return (
             <g key={s.id}>
@@ -278,18 +276,6 @@ export const Network = memo(function Network({
                 </g>
               )}
 
-              {piling && (
-                <text
-                  x={pile.x}
-                  y={n.y + 36}
-                  textAnchor="middle"
-                  fontSize={11}
-                  fontWeight={700}
-                  fill={GARNET}
-                >
-                  +{fmtRate(flow.accumulation)} / hr pile up
-                </text>
-              )}
             </g>
           )
         })}

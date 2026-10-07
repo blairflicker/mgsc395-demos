@@ -70,6 +70,10 @@ export const servedBy = (id: string): WashType[] =>
 
 export const totalRate = (r: Rates): number => r.standard + r.deluxe
 
+/** minutes of pure processing on a wash's route — its time in the wash with no waiting */
+export const routeMinutes = (t: WashType): number =>
+  ROUTE[t].reduce((sum, id) => sum + STATION_BY_ID[id].minutes, 0)
+
 // ── Fluid (long-run) flows ───────────────────────────────────────
 
 export interface StationFlow {
@@ -283,8 +287,9 @@ export class CarWashSim {
   completed: Rates = { standard: 0, deluxe: 0 }
   /** cars that have left, newest last; the caller trims this list */
   finished: Car[] = []
-  /** sim-minutes at which cars left, oldest first (bounded) */
-  doneTimes: number[] = []
+  /** one entry per finished car, oldest first (bounded): when it left,
+   *  its minutes in the wash, and how many of those were spent waiting */
+  doneLog: { t: number; flow: number; wait: number }[] = []
 
   private nextId = 1
   private nextArrival: Rates
@@ -357,10 +362,27 @@ export class CarWashSim {
     const span = Math.min(windowMin, this.now)
     const since = this.now - span
     let count = 0
-    for (let i = this.doneTimes.length - 1; i >= 0 && this.doneTimes[i] > since; i--) {
+    for (let i = this.doneLog.length - 1; i >= 0 && this.doneLog[i].t > since; i--) {
       count++
     }
     return count === 0 ? null : (count * 60) / span
+  }
+
+  /**
+   * Average minutes a car spent in the wash, and waiting in line, over the
+   * cars that finished in the last `windowMin` minutes. Null until one has.
+   */
+  recentTimes(windowMin: number): { flow: number; wait: number; n: number } | null {
+    const since = this.now - windowMin
+    let n = 0
+    let flow = 0
+    let wait = 0
+    for (let i = this.doneLog.length - 1; i >= 0 && this.doneLog[i].t > since; i--) {
+      n++
+      flow += this.doneLog[i].flow
+      wait += this.doneLog[i].wait
+    }
+    return n === 0 ? null : { flow: flow / n, wait: wait / n, n }
   }
 
   /** run every event up to and including sim-minute `toTime` */
@@ -445,8 +467,9 @@ export class CarWashSim {
       car.doneAt = this.now
       this.completed[car.type]++
       this.finished.push(car)
-      this.doneTimes.push(this.now)
-      if (this.doneTimes.length > 4000) this.doneTimes.splice(0, 2000)
+      const flow = this.now - car.arrivedAt
+      this.doneLog.push({ t: this.now, flow, wait: flow - routeMinutes(car.type) })
+      if (this.doneLog.length > 4000) this.doneLog.splice(0, 2000)
     }
   }
 }
