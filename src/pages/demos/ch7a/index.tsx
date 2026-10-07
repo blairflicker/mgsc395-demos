@@ -18,6 +18,7 @@ import {
   type WashType,
 } from '../../../lib/carwash'
 import { Network, QUEUE_VISIBLE, TYPE_COLOR } from './Network'
+import { Pipes } from './Pipes'
 import { MixChart } from './MixChart'
 
 /** sim-minutes per real second; at 1× one real second is one minute */
@@ -33,6 +34,8 @@ const MAX_RATE = 12
 const RATE_WINDOW_MIN = 240
 const RATE_STEP = 0.5
 
+type View = 'cars' | 'pipes'
+
 const fmt1 = (x: number) =>
   x.toLocaleString('en-US', { maximumFractionDigits: 1 })
 
@@ -43,12 +46,16 @@ function fmtClock(minutes: number): string {
   return `${h}h ${String(m).padStart(2, '0')}m`
 }
 
+const who = (id: string) =>
+  servedBy(id).length === 2 ? 'both' : WASH_LABEL[servedBy(id)[0]]
+
 export default function Ch7aCarWash() {
   const [rates, setRates] = useState<Rates>({ ...CLASS_RATES })
   const [speed, setSpeed] = useState(DEFAULT_SPEED)
   // starts paused so students can set the dials first, then hit Play
   const [running, setRunning] = useState(false)
   const [showAnswers, setShowAnswers] = useState(false)
+  const [view, setView] = useState<View>('cars')
   const [showFlow, setShowFlow] = useState(false)
   const [showBottlenecks, setShowBottlenecks] = useState(false)
   const [, frameTick] = useReducer((x: number) => x + 1, 0)
@@ -103,7 +110,7 @@ export default function Ch7aCarWash() {
     setRates((r) => ({ ...r, [t]: v }))
   }
 
-  const view = simView(
+  const simState = simView(
     sim,
     QUEUE_VISIBLE,
     exitingRef.current.map((e) => e.car),
@@ -114,6 +121,26 @@ export default function Ch7aCarWash() {
   const recentRate = sim.recentRate(RATE_WINDOW_MIN)
   const wip = sim.wip()
   const piling = flows.stations.filter((f) => f.accumulation > 0.005)
+
+  const checkbox = (
+    label: string,
+    checked: boolean,
+    onChange: (v: boolean) => void,
+    disabled = false,
+  ) => (
+    <label
+      className={`flex items-center gap-1.5 ${disabled ? 'cursor-not-allowed text-stone-400' : 'cursor-pointer text-stone-700'}`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="accent-garnet-800"
+      />
+      {label}
+    </label>
+  )
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -135,8 +162,8 @@ export default function Ch7aCarWash() {
           {showAnswers ? 'Hide answers' : 'Show answers'}
         </button>
         <span className="text-xs text-stone-500">
-          Answers mark where lines grow and how fast, then unpack the flows
-          below.
+          Answers mark where lines grow and how fast, extend the data table
+          with the flows, and show what the wash can finish.
         </span>
       </div>
 
@@ -212,12 +239,10 @@ export default function Ch7aCarWash() {
                 </div>
               ))}
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-stone-500">
-                Total {fmt1(arriving)} cars / hr
-                {arriving > capacityPerHour(STATIONS[0]) &&
-                  ` — more than A1 can admit (${fmt1(capacityPerHour(STATIONS[0]))} / hr)`}
-              </span>
+            <div className="mt-3 text-xs text-stone-500">
+              Total {fmt1(arriving)} cars / hr
+              {arriving > capacityPerHour(STATIONS[0]) &&
+                ` — more than A1 can admit (${fmt1(capacityPerHour(STATIONS[0]))} / hr)`}
             </div>
           </div>
 
@@ -267,40 +292,63 @@ export default function Ch7aCarWash() {
 
       {/* The wash */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-stone-900">The wash</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-stone-900">The wash</h2>
+            <div className="flex overflow-hidden rounded-md border border-stone-300 text-xs">
+              {(
+                [
+                  ['cars', 'Cars'],
+                  ['pipes', 'Pipes'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setView(key)}
+                  aria-pressed={view === key}
+                  className={[
+                    'px-2.5 py-1 font-medium',
+                    view === key
+                      ? 'bg-garnet-800 text-white'
+                      : 'bg-white text-stone-700 hover:bg-stone-50',
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <label className="flex cursor-pointer items-center gap-1.5 text-stone-700">
-              <input
-                type="checkbox"
-                checked={showFlow}
-                onChange={(e) => setShowFlow(e.target.checked)}
-                className="accent-garnet-800"
-              />
-              Show flow
-            </label>
-            <label className="flex cursor-pointer items-center gap-1.5 text-stone-700">
-              <input
-                type="checkbox"
-                checked={showBottlenecks}
-                onChange={(e) => setShowBottlenecks(e.target.checked)}
-                className="accent-garnet-800"
-              />
-              Identify bottlenecks
-            </label>
+            {checkbox('Show flow', showFlow, setShowFlow, view === 'pipes')}
+            {checkbox('Identify bottlenecks', showBottlenecks, setShowBottlenecks)}
           </div>
         </div>
-        <Network
-          view={view}
-          flows={flows}
-          speed={speed}
-          showFlow={showFlow}
-          showBottlenecks={showBottlenecks}
-          showAnswers={showAnswers}
-        />
-        <p className="mt-2 text-xs text-stone-500">
-          Each line shows its first {QUEUE_VISIBLE} cars; the badge above it counts them all.
-        </p>
+
+        {view === 'cars' ? (
+          <>
+            <Network
+              view={simState}
+              flows={flows}
+              speed={speed}
+              showFlow={showFlow}
+              showBottlenecks={showBottlenecks}
+              showAnswers={showAnswers}
+            />
+            <p className="mt-2 text-xs text-stone-500">
+              Each line shows its first {QUEUE_VISIBLE} cars; the badge above it counts them all.
+            </p>
+          </>
+        ) : (
+          <>
+            <Pipes arrivals={rates} flows={flows} showBottlenecks={showBottlenecks} />
+            <p className="mt-2 text-xs text-stone-500">
+              Each station is a pipe as wide as its capacity, and the water
+              is the steady flow at the current dials. Where more water
+              reaches a pipe than it can pass, the reducer in front of it
+              turns garnet — the kink in the hose.
+            </p>
+          </>
+        )}
 
         <div className="mt-4 grid gap-3 border-t border-stone-100 pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -341,7 +389,7 @@ export default function Ch7aCarWash() {
             <div className="text-lg text-stone-800 tabular-nums">
               {wip.toLocaleString('en-US')}
               <span className="ml-2 text-xs text-stone-500">
-                {Object.values(view.queueLength)
+                {Object.values(simState.queueLength)
                   .reduce((a, b) => a + b, 0)
                   .toLocaleString('en-US')}{' '}
                 waiting
@@ -351,12 +399,77 @@ export default function Ch7aCarWash() {
         </div>
       </div>
 
+      {/* The data — grows into the flow table when answers are shown */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <h2 className="mb-1 text-lg font-semibold text-stone-900">The data</h2>
+        <p className="mb-3 text-sm text-stone-600">
+          One car at a time at every station. Flow = 60 min/hr ÷ duration.
+          {showAnswers &&
+            ' A station passes on the lesser of what reaches it and its flow; the rest piles up in front of it, hour after hour.'}
+        </p>
+        <div className="overflow-x-auto">
+          <table className={`w-full text-sm ${showAnswers ? 'min-w-[38rem]' : 'max-w-xl min-w-80'}`}>
+            <thead>
+              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
+                <th className="py-1.5 pr-3 font-semibold">Station</th>
+                <th className="py-1.5 pr-3 font-semibold">Who</th>
+                <th className="py-1.5 pr-3 text-right font-semibold">Duration</th>
+                <th className="py-1.5 pr-3 text-right font-semibold">Flow</th>
+                {showAnswers && (
+                  <>
+                    <th className="py-1.5 pr-3 text-right font-semibold text-garnet-800">
+                      Reaches it
+                    </th>
+                    <th className="py-1.5 pr-3 text-right font-semibold text-garnet-800">
+                      Passes on
+                    </th>
+                    <th className="py-1.5 text-right font-semibold text-garnet-800">
+                      Piles up
+                    </th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {STATIONS.map((s) => {
+                const f = flows.byId[s.id]
+                const hot = showAnswers && f.accumulation > 0.005
+                const cls = hot ? 'font-semibold text-garnet-800' : 'text-stone-700'
+                return (
+                  <tr key={s.id} className="border-b border-stone-100 last:border-0">
+                    <td className={`py-1 pr-3 ${cls}`}>{s.id}</td>
+                    <td className="py-1 pr-3 text-stone-700">{who(s.id)}</td>
+                    <td className="py-1 pr-3 text-right text-stone-700">{s.minutes} min / car</td>
+                    <td className="py-1 pr-3 text-right text-stone-700">
+                      60 ÷ {s.minutes} = {fmt1(capacityPerHour(s))} cars / hr
+                    </td>
+                    {showAnswers && (
+                      <>
+                        <td className="py-1 pr-3 text-right text-stone-700">
+                          {fmt1(f.inTotal)}
+                        </td>
+                        <td className="py-1 pr-3 text-right text-stone-700">
+                          {fmt1(f.outTotal)}
+                        </td>
+                        <td className={`py-1 text-right ${cls}`}>
+                          {hot ? `+${fmt1(f.accumulation)} / hr` : '—'}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* The answer */}
       {showAnswers && (
         <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
           <h2 className="mb-3 text-lg font-semibold text-stone-900">The answer</h2>
 
-          <div className="mb-4 grid gap-3 sm:grid-cols-3">
+          <div className="mb-5 grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-stone-200 p-3">
               <div className="text-xs font-semibold text-stone-500 uppercase">
                 Finishes at this mix
@@ -372,9 +485,7 @@ export default function Ch7aCarWash() {
             <div
               className={`rounded-lg border p-3 ${flows.totalAccumulation > 0.005 ? 'border-garnet-300 bg-garnet-50/40' : 'border-stone-200'}`}
             >
-              <div className="text-xs font-semibold text-stone-500 uppercase">
-                Join a line for good
-              </div>
+              <div className="text-xs font-semibold text-stone-500 uppercase">Piles up</div>
               <div
                 className={`text-xl font-bold tabular-nums ${flows.totalAccumulation > 0.005 ? 'text-garnet-800' : 'text-stone-900'}`}
               >
@@ -382,131 +493,55 @@ export default function Ch7aCarWash() {
               </div>
               <div className="text-xs text-stone-500">
                 {piling.length > 0
-                  ? `in front of ${piling.map((f) => f.id).join(', ')}`
+                  ? `arrive faster than they can be served; the lines in front of ${piling.map((f) => f.id).join(', ')} grow by this much every hour`
                   : 'no line grows anywhere'}
               </div>
             </div>
             <div className="rounded-lg border border-stone-200 p-3">
-              <div className="text-xs font-semibold text-stone-500 uppercase">
-                Most it can ever finish
-              </div>
+              <div className="text-xs font-semibold text-stone-500 uppercase">Capacity</div>
               <div className="text-xl font-bold text-stone-900 tabular-nums">
                 {fmt1(SYSTEM_CAPACITY)} cars / hr
               </div>
               <div className="text-xs text-stone-500">
-                {MIX_LIMITS.total.stationId} sees every car. Reaching it takes a mix
-                with at most {fmt1(MIX_LIMITS.standard.capacity)} Standard (
-                {MIX_LIMITS.standard.stationId}) and {fmt1(MIX_LIMITS.deluxe.capacity)}{' '}
-                Deluxe ({MIX_LIMITS.deluxe.stationId}) per hour, {fmt1(SYSTEM_CAPACITY)} in all
+                set by {MIX_LIMITS.total.stationId}, which every car passes.
+                Reaching it takes at most {fmt1(MIX_LIMITS.standard.capacity)}{' '}
+                Standard ({MIX_LIMITS.standard.stationId}) and{' '}
+                {fmt1(MIX_LIMITS.deluxe.capacity)} Deluxe ({MIX_LIMITS.deluxe.stationId})
+                per hour, {fmt1(SYSTEM_CAPACITY)} in all
               </div>
             </div>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
-            <div>
-              <h3 className="mb-1.5 text-sm font-semibold text-stone-800">
-                Every station as a flow
-              </h3>
-              <p className="mb-2 text-xs text-stone-500">
-                A station passes on the lesser of what reaches it and its
-                capacity. The rest piles up in front of it, hour after hour.
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[30rem] text-sm">
-                  <thead>
-                    <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                      <th className="py-1.5 pr-3 font-semibold">Station</th>
-                      <th className="py-1.5 pr-3 text-right font-semibold">Min / car</th>
-                      <th className="py-1.5 pr-3 text-right font-semibold">Capacity</th>
-                      <th className="py-1.5 pr-3 text-right font-semibold">Reaches it</th>
-                      <th className="py-1.5 pr-3 text-right font-semibold">Passes on</th>
-                      <th className="py-1.5 text-right font-semibold">Piles up</th>
-                    </tr>
-                  </thead>
-                  <tbody className="tabular-nums">
-                    {flows.stations.map((f) => {
-                      const st = STATIONS.find((s) => s.id === f.id)!
-                      const hot = f.accumulation > 0.005
-                      const cls = hot ? 'font-semibold text-garnet-800' : 'text-stone-700'
-                      return (
-                        <tr key={f.id} className="border-b border-stone-100 last:border-0">
-                          <td className={`py-1 pr-3 ${cls}`}>
-                            {f.id}
-                            <span className="ml-1.5 text-xs font-normal text-stone-400">
-                              {servedBy(f.id).length === 2
-                                ? 'both'
-                                : WASH_LABEL[servedBy(f.id)[0]]}
-                            </span>
-                          </td>
-                          <td className="py-1 pr-3 text-right text-stone-700">{st.minutes}</td>
-                          <td className="py-1 pr-3 text-right text-stone-700">
-                            {fmt1(f.capacity)} / hr
-                          </td>
-                          <td className="py-1 pr-3 text-right text-stone-700">
-                            {fmt1(f.inTotal)}
-                          </td>
-                          <td className="py-1 pr-3 text-right text-stone-700">
-                            {fmt1(f.outTotal)}
-                          </td>
-                          <td className={`py-1 text-right ${cls}`}>
-                            {hot ? `+${fmt1(f.accumulation)} / hr` : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div>
+            <div className="max-w-xl text-sm leading-relaxed text-stone-600">
               <h3 className="mb-1.5 text-sm font-semibold text-stone-800">
                 What the wash can finish
               </h3>
-              <p className="mb-2 text-xs text-stone-500">
-                Any mix inside the shaded region flows through with no line
-                growing. Arrivals outside it get pulled back to the edge —
-                the gap is what piles up.
+              <p>
+                Each leg has a slowest step, and so does the shared stretch
+                every car travels. Those three steps write three constraints
+                on the output mix: Standard cars per hour at most{' '}
+                {fmt1(MIX_LIMITS.standard.capacity)} ({MIX_LIMITS.standard.stationId}),
+                Deluxe at most {fmt1(MIX_LIMITS.deluxe.capacity)} (
+                {MIX_LIMITS.deluxe.stationId}), and the two together at most{' '}
+                {fmt1(MIX_LIMITS.total.capacity)} ({MIX_LIMITS.total.stationId}).
               </p>
-              <MixChart arrivals={rates} throughput={flows.throughput} max={MAX_RATE} />
+              <p className="mt-2">
+                The shaded region is every mix that satisfies all three — the
+                feasible region, exactly as a linear program would draw it.
+                Any mix inside flows through with no line growing. Arrivals
+                outside it get pulled back to the edge, and the gap between
+                the two points is what piles up. The faster shared steps (
+                {STATIONS.filter((s) => servedBy(s.id).length === 2 && s.id !== MIX_LIMITS.total.stationId)
+                  .map((s) => s.id)
+                  .join(', ')}
+                ) sit outside the region: they never bind.
+              </p>
             </div>
+            <MixChart arrivals={rates} throughput={flows.throughput} max={MAX_RATE} />
           </div>
         </div>
       )}
-
-      {/* The data */}
-      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
-        <h2 className="mb-1 text-lg font-semibold text-stone-900">The data</h2>
-        <p className="mb-3 text-sm text-stone-600">
-          One car at a time at every station. Flow = 60 min/hr ÷ duration.
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full max-w-md min-w-72 text-sm">
-            <thead>
-              <tr className="border-b border-stone-200 text-left text-xs text-stone-500 uppercase">
-                <th className="py-1.5 pr-3 font-semibold">Station</th>
-                <th className="py-1.5 pr-3 font-semibold">Who</th>
-                <th className="py-1.5 pr-3 text-right font-semibold">Duration</th>
-                <th className="py-1.5 text-right font-semibold">Flow</th>
-              </tr>
-            </thead>
-            <tbody className="tabular-nums">
-              {STATIONS.map((s) => (
-                <tr key={s.id} className="border-b border-stone-100 last:border-0">
-                  <td className="py-1 pr-3 text-stone-700">
-                    {s.id}</td>
-                  <td className="py-1 pr-3 text-stone-700">
-                    {servedBy(s.id).length === 2 ? 'both' : WASH_LABEL[servedBy(s.id)[0]]}
-                  </td>
-                  <td className="py-1 pr-3 text-right text-stone-700">{s.minutes} min / car</td>
-                  <td className="py-1 text-right text-stone-700">
-                    60 ÷ {s.minutes} = {fmt1(capacityPerHour(s))} cars / hr
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   )
 }

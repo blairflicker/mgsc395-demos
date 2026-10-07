@@ -16,7 +16,7 @@ export const TYPE_COLOR: Record<WashType, string> = {
 }
 const GARNET = '#a52547'
 
-const W = 1160
+const W = 1180
 const H = 380
 const R = 30 // station radius
 const DOT_R = 6
@@ -244,12 +244,16 @@ export const Network = memo(function Network({
                 (right ? (
                   <text
                     x={n.x + R + 8}
-                    y={n.y + 26}
+                    y={n.y + 20}
                     fontSize={11}
                     fontWeight={700}
                     fill={GARNET}
                   >
-                    {tag}
+                    {tag.split(' ').map((word, i) => (
+                      <tspan key={word} x={n.x + R + 8} dy={i === 0 ? 0 : 13}>
+                        {word}
+                      </tspan>
+                    ))}
                   </text>
                 ) : (
                   <text
