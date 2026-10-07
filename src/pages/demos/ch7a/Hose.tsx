@@ -58,13 +58,6 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
   const top = segs.flatMap((s) => [`${s.x1},${Y - s.r}`, `${s.x2},${Y - s.r}`])
   const bottom = segs.flatMap((s) => [`${s.x1},${Y + s.r}`, `${s.x2},${Y + s.r}`])
 
-  // every joint, for the faint curved seam drawn over it
-  const joints: { x: number; r: number }[] = []
-  segs.forEach((s, i) => {
-    if (i > 0) joints.push({ x: s.x1, r: s.r })
-    if (i < segs.length - 1) joints.push({ x: s.x2, r: s.r })
-  })
-
   return (
     <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
       <svg
@@ -118,18 +111,6 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
             </g>
           )
         })}
-
-        {/* the curved seams at every joint */}
-        {joints.map((j, i) => (
-          <path
-            key={i}
-            d={`M${j.x},${Y - j.r} ${capDown(j.x, j.r)}`}
-            fill="none"
-            stroke={PIPE_EDGE}
-            strokeWidth={1}
-            opacity={0.45}
-          />
-        ))}
 
         {/* far end */}
         <path
