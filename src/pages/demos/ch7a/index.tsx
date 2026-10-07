@@ -4,7 +4,9 @@ import {
   CLASS_RATES,
   CarWashSim,
   MIX_LIMITS,
+  ROUTE,
   STATIONS,
+  STATION_BY_ID,
   SYSTEM_CAPACITY,
   WASH_LABEL,
   WASH_TYPES,
@@ -18,7 +20,7 @@ import {
   type WashType,
 } from '../../../lib/carwash'
 import { Network, QUEUE_VISIBLE, TYPE_COLOR } from './Network'
-import { Pipes } from './Pipes'
+import { Hose } from './Hose'
 import { MixChart } from './MixChart'
 
 /** sim-minutes per real second; at 1× one real second is one minute */
@@ -33,8 +35,6 @@ const MAX_RATE = 12
 /** the finishing-rate readout averages over this many recent sim-minutes */
 const RATE_WINDOW_MIN = 240
 const RATE_STEP = 0.5
-
-type View = 'cars' | 'pipes'
 
 const fmt1 = (x: number) =>
   x.toLocaleString('en-US', { maximumFractionDigits: 1 })
@@ -55,7 +55,7 @@ export default function Ch7aCarWash() {
   // starts paused so students can set the dials first, then hit Play
   const [running, setRunning] = useState(false)
   const [showAnswers, setShowAnswers] = useState(false)
-  const [view, setView] = useState<View>('cars')
+  const [hoseLeg, setHoseLeg] = useState<WashType>('standard')
   const [showFlow, setShowFlow] = useState(false)
   const [showBottlenecks, setShowBottlenecks] = useState(false)
   const [, frameTick] = useReducer((x: number) => x + 1, 0)
@@ -121,6 +121,7 @@ export default function Ch7aCarWash() {
   const recentRate = sim.recentRate(RATE_WINDOW_MIN)
   const wip = sim.wip()
   const piling = flows.stations.filter((f) => f.accumulation > 0.005)
+  const hoseCap = Math.min(...ROUTE[hoseLeg].map((id) => capacityPerHour(STATION_BY_ID[id])))
 
   const checkbox = (
     label: string,
@@ -293,62 +294,23 @@ export default function Ch7aCarWash() {
       {/* The wash */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-stone-900">The wash</h2>
-            <div className="flex overflow-hidden rounded-md border border-stone-300 text-xs">
-              {(
-                [
-                  ['cars', 'Cars'],
-                  ['pipes', 'Pipes'],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setView(key)}
-                  aria-pressed={view === key}
-                  className={[
-                    'px-2.5 py-1 font-medium',
-                    view === key
-                      ? 'bg-garnet-800 text-white'
-                      : 'bg-white text-stone-700 hover:bg-stone-50',
-                  ].join(' ')}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <h2 className="text-lg font-semibold text-stone-900">The wash</h2>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            {checkbox('Show flow', showFlow, setShowFlow, view === 'pipes')}
+            {checkbox('Show flow', showFlow, setShowFlow)}
             {checkbox('Identify bottlenecks', showBottlenecks, setShowBottlenecks)}
           </div>
         </div>
-
-        {view === 'cars' ? (
-          <>
-            <Network
-              view={simState}
-              flows={flows}
-              speed={speed}
-              showFlow={showFlow}
-              showBottlenecks={showBottlenecks}
-              showAnswers={showAnswers}
-            />
-            <p className="mt-2 text-xs text-stone-500">
-              Each line shows its first {QUEUE_VISIBLE} cars; the badge above it counts them all.
-            </p>
-          </>
-        ) : (
-          <>
-            <Pipes arrivals={rates} flows={flows} showBottlenecks={showBottlenecks} />
-            <p className="mt-2 text-xs text-stone-500">
-              Each station is a pipe as wide as its capacity, and the water
-              is the steady flow at the current dials. Where more water
-              reaches a pipe than it can pass, the reducer in front of it
-              turns garnet — the kink in the hose.
-            </p>
-          </>
-        )}
+        <Network
+          view={simState}
+          flows={flows}
+          speed={speed}
+          showFlow={showFlow}
+          showBottlenecks={showBottlenecks}
+          showAnswers={showAnswers}
+        />
+        <p className="mt-2 text-xs text-stone-500">
+          Each line shows its first {QUEUE_VISIBLE} cars; the badge above it counts them all.
+        </p>
 
         <div className="mt-4 grid gap-3 border-t border-stone-100 pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -397,6 +359,36 @@ export default function Ch7aCarWash() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* The hose */}
+      <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <h2 className="text-lg font-semibold text-stone-900">The hose</h2>
+          <div className="flex overflow-hidden rounded-md border border-stone-300 text-xs">
+            {WASH_TYPES.map((t) => (
+              <button
+                key={t}
+                onClick={() => setHoseLeg(t)}
+                aria-pressed={hoseLeg === t}
+                className={[
+                  'px-2.5 py-1 font-medium',
+                  hoseLeg === t ? 'text-white' : 'bg-white text-stone-700 hover:bg-stone-50',
+                ].join(' ')}
+                style={hoseLeg === t ? { backgroundColor: TYPE_COLOR[t] } : undefined}
+              >
+                {WASH_LABEL[t]} wash
+              </button>
+            ))}
+          </div>
+        </div>
+        <Hose type={hoseLeg} />
+        <p className="mt-2 max-w-3xl text-xs text-stone-500">
+          Follow one wash from start to finish and draw each station as a pipe
+          as wide as its flow. A hose passes no more than its narrowest point:
+          the {WASH_LABEL[hoseLeg]} leg can never finish more than {fmt1(hoseCap)}{' '}
+          cars an hour, however wide the pipes before and after it.
+        </p>
       </div>
 
       {/* The data — grows into the flow table when answers are shown */}
