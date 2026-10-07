@@ -382,12 +382,13 @@ export default function Ch7aCarWash() {
             ))}
           </div>
         </div>
-        <Hose type={hoseLeg} />
+        <Hose type={hoseLeg} showAnswers={showAnswers} />
         <p className="mt-2 max-w-3xl text-xs text-stone-500">
           Follow one wash from start to finish and draw each station as a pipe
-          as wide as its flow. A hose passes no more than its narrowest point:
-          the {WASH_LABEL[hoseLeg]} leg can never finish more than {fmt1(hoseCap)}{' '}
-          cars an hour, however wide the pipes before and after it.
+          as wide as its flow. A hose passes no more than its narrowest point.{' '}
+          {showAnswers
+            ? `The ${WASH_LABEL[hoseLeg]} leg can never finish more than ${fmt1(hoseCap)} cars an hour, however wide the pipes before and after it.`
+            : 'Which station is the kink, and how many cars an hour can this leg finish?'}
         </p>
       </div>
 

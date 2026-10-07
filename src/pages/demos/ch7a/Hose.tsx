@@ -18,43 +18,87 @@ const W = 1000
 const H = 250
 const Y = 126 // pipe centerline
 const X0 = 70
-const LEN = 112
-const REDUCER = 30
-/** how squashed the end ellipses are — the pipe seen slightly from the side */
-const MOUTH = 0.16
+const LEN = 116
+/** how squashed the round ends are — the pipe seen slightly from the side */
+const ROUND = 0.18
 /** shapes overlap by this much so no hairline shows between them */
 const SEAM = 0.6
 
 const fmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 1 })
 
+interface Seg {
+  id: string
+  cap: number
+  /** diameter, px */
+  d: number
+  /** horizontal radius of this pipe's round ends */
+  rx: number
+  /** body extents */
+  x1: number
+  x2: number
+  /** this pipe is wider than the one before it, so it shows a round face
+   *  at x1 that the narrower pipe runs into */
+  face: boolean
+}
+
 /**
  * One wash's route as a straight hose: each station is a length of pipe
- * as wide as its flow (cars per hour), joined by reducers and expanders,
- * open at the left and rounded off at the right. The narrowest pipe, and
- * the reducer that squeezes into it, are garnet — the kink that sets how
- * much can get through the whole leg.
+ * as wide as its flow (cars per hour). Every pipe ends in a domed cap;
+ * a narrower pipe emerges from the dome's surface, and a wider pipe
+ * presents a round face that the narrower one runs into — so the hose
+ * steps down and up like fitted plumbing. With answers on, the narrowest
+ * pipe and the dome squeezing into it are garnet: the kink.
  */
-export function Hose({ type }: { type: WashType }) {
+export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boolean }) {
   const ids = ROUTE[type]
   const caps = ids.map((id) => capacityPerHour(STATION_BY_ID[id]))
   const minCap = Math.min(...caps)
-  const bottleneck = ids[caps.indexOf(minCap)]
+  const bottleneck = showAnswers ? ids[caps.indexOf(minCap)] : null
 
+  // lay the pipes out left to right; each transition is a curve, so the
+  // next body starts where it meets the previous dome (narrowing) or where
+  // its own face meets the previous body (widening)
+  const segs: Seg[] = []
   let x = X0
-  const segs = ids.map((id, i) => {
-    const s = { id, x1: x, x2: x + LEN, d: K * caps[i], cap: caps[i] }
-    x += LEN + REDUCER
-    return s
+  ids.forEach((id, i) => {
+    const d = K * caps[i]
+    const rx = d * ROUND
+    const prev = segs[i - 1]
+    let face = false
+    if (prev) {
+      if (d < prev.d) {
+        // emerge from the previous dome where it is this pipe's height
+        x = prev.x2 + prev.rx * Math.sqrt(1 - (d / prev.d) ** 2)
+      } else if (d > prev.d) {
+        // this pipe's face sits so its surface meets the previous body end
+        x = prev.x2 + rx * Math.sqrt(1 - (prev.d / d) ** 2)
+        face = true
+      } else {
+        x = prev.x2
+      }
+    }
+    segs.push({ id, cap: caps[i], d, rx, x1: x, x2: x + LEN, face })
   })
-  const end = x - REDUCER
   const first = segs[0]
   const last = segs[segs.length - 1]
-  const mouthRx = first.d * MOUTH
-  const capRx = last.d * MOUTH
 
-  // the top and bottom edges of the whole hose, as one polyline each
-  const top = segs.flatMap((s) => [`${s.x1},${Y - s.d / 2}`, `${s.x2},${Y - s.d / 2}`])
-  const bottom = segs.flatMap((s) => [`${s.x1},${Y + s.d / 2}`, `${s.x2},${Y + s.d / 2}`])
+  // the silhouette: top edge left to right, round the far cap, bottom edge
+  let top = `M${X0},${Y - first.d / 2}`
+  let bottom = `M${X0},${Y + first.d / 2}`
+  segs.forEach((s, i) => {
+    top += ` H${s.x2}`
+    bottom += ` H${s.x2}`
+    const next = segs[i + 1]
+    if (!next) {
+      top += ` A${s.rx},${s.d / 2} 0 0 1 ${s.x2},${Y + s.d / 2}`
+    } else if (next.d < s.d) {
+      top += ` A${s.rx},${s.d / 2} 0 0 1 ${next.x1},${Y - next.d / 2}`
+      bottom += ` A${s.rx},${s.d / 2} 0 0 0 ${next.x1},${Y + next.d / 2}`
+    } else if (next.d > s.d) {
+      top += ` A${next.rx},${next.d / 2} 0 0 1 ${next.x1},${Y - next.d / 2}`
+      bottom += ` A${next.rx},${next.d / 2} 0 0 0 ${next.x1},${Y + next.d / 2}`
+    }
+  })
 
   return (
     <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
@@ -82,58 +126,52 @@ export function Hose({ type }: { type: WashType }) {
         </defs>
 
         {/* in */}
-        <text x={X0 - mouthRx - 12} y={Y - 4} textAnchor="end" fontSize={11} fill="#78716c">
+        <text x={X0 - first.rx - 12} y={Y - 4} textAnchor="end" fontSize={11} fill="#78716c">
           {WASH_LABEL[type]}
         </text>
-        <text x={X0 - mouthRx - 12} y={Y + 10} textAnchor="end" fontSize={11} fill="#78716c">
+        <text x={X0 - first.rx - 12} y={Y + 10} textAnchor="end" fontSize={11} fill="#78716c">
           cars in →
         </text>
 
-        {/* pipe bodies — no strokes, so no seams between sections */}
+        {/* pipe bodies, left to right: round face (if wider), body, dome */}
         {segs.map((s, i) => {
-          const hot = s.id === bottleneck
-          const prev = segs[i - 1]
-          const fill = hot ? KINK_FILL : PIPE_FILL
+          const fill = s.id === bottleneck ? KINK_FILL : PIPE_FILL
+          const isLast = i === segs.length - 1
           return (
             <g key={s.id}>
-              {prev && (
-                <polygon
-                  points={`${prev.x2 - SEAM},${Y - prev.d / 2} ${s.x1 + SEAM},${Y - s.d / 2} ${s.x1 + SEAM},${Y + s.d / 2} ${prev.x2 - SEAM},${Y + prev.d / 2}`}
-                  fill={fill}
-                />
-              )}
+              {s.face && <ellipse cx={s.x1} cy={Y} rx={s.rx} ry={s.d / 2} fill={fill} />}
               <rect
-                x={s.x1 - (i === 0 ? 0 : SEAM)}
+                x={s.x1 - SEAM}
                 y={Y - s.d / 2}
-                width={LEN + (i === 0 ? 0 : SEAM) + (i === segs.length - 1 ? 0 : SEAM)}
+                width={LEN + 2 * SEAM}
                 height={s.d}
                 fill={fill}
               />
+              <path
+                d={`M${s.x2 - SEAM},${Y - s.d / 2} A${s.rx},${s.d / 2} 0 0 1 ${s.x2 - SEAM},${Y + s.d / 2} Z`}
+                fill={fill}
+              />
+              {isLast && (
+                <path
+                  d={`M${s.x2},${Y - s.d / 2} A${s.rx},${s.d / 2} 0 0 1 ${s.x2},${Y + s.d / 2}`}
+                  fill="none"
+                  stroke={PIPE_EDGE}
+                  strokeWidth={1.2}
+                />
+              )}
             </g>
           )
         })}
 
-        {/* rounded-off far end */}
-        <path
-          d={`M${end - SEAM},${Y - last.d / 2} A${capRx},${last.d / 2} 0 0 1 ${end - SEAM},${Y + last.d / 2} Z`}
-          fill={last.id === bottleneck ? KINK_FILL : PIPE_FILL}
-        />
-        <path
-          d={`M${end},${Y - last.d / 2} A${capRx},${last.d / 2} 0 0 1 ${end},${Y + last.d / 2}`}
-          fill="none"
-          stroke={PIPE_EDGE}
-          strokeWidth={1.2}
-        />
-
-        {/* top and bottom outlines */}
-        <polyline points={top.join(' ')} fill="none" stroke={PIPE_EDGE} strokeWidth={1.2} strokeLinejoin="round" />
-        <polyline points={bottom.join(' ')} fill="none" stroke={PIPE_EDGE} strokeWidth={1.2} strokeLinejoin="round" />
+        {/* silhouette */}
+        <path d={top} fill="none" stroke={PIPE_EDGE} strokeWidth={1.2} strokeLinejoin="round" />
+        <path d={bottom} fill="none" stroke={PIPE_EDGE} strokeWidth={1.2} strokeLinejoin="round" />
 
         {/* the open mouth */}
         <ellipse
           cx={X0}
           cy={Y}
-          rx={mouthRx}
+          rx={first.rx}
           ry={first.d / 2}
           fill="url(#ch7a-mouth)"
           stroke={PIPE_EDGE}
@@ -143,7 +181,7 @@ export function Hose({ type }: { type: WashType }) {
         {/* labels */}
         {segs.map((s) => {
           const hot = s.id === bottleneck
-          const cx = s.x1 + LEN / 2
+          const cx = (s.x1 + s.x2) / 2
           return (
             <g key={s.id}>
               <text
@@ -190,11 +228,17 @@ export function Hose({ type }: { type: WashType }) {
         })}
 
         {/* out */}
-        <text x={end + capRx + 14} y={Y - 4} fontSize={11} fill="#78716c">
+        <text x={last.x2 + last.rx + 14} y={Y - 4} fontSize={11} fill="#78716c">
           at most
         </text>
-        <text x={end + capRx + 14} y={Y + 11} fontSize={12} fontWeight={700} fill="#1c1917">
-          {fmt(minCap)} cars / hr
+        <text
+          x={last.x2 + last.rx + 14}
+          y={Y + 11}
+          fontSize={12}
+          fontWeight={700}
+          fill={showAnswers ? '#1c1917' : '#a8a29e'}
+        >
+          {showAnswers ? `${fmt(minCap)} cars / hr` : '? cars / hr'}
         </text>
       </svg>
     </div>
