@@ -356,7 +356,7 @@ export default function Ch7aCarWash() {
               <span className="ml-2 text-xs text-stone-500">
                 {recentTimes === null
                   ? 'arriving to driving out'
-                  : `${fmtDuration(recentTimes.wait)} of it waiting in line`}
+                  : `${fmtDuration(recentTimes.flow - recentTimes.wait)} being washed + ${fmtDuration(recentTimes.wait)} waiting`}
               </span>
             </div>
           </div>
