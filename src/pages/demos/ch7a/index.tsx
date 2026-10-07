@@ -364,7 +364,7 @@ export default function Ch7aCarWash() {
       {/* The hose */}
       <div className="mb-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <h2 className="text-lg font-semibold text-stone-900">The hose</h2>
+          <h2 className="text-lg font-semibold text-stone-900">The &ldquo;hose&rdquo; view</h2>
           <div className="flex overflow-hidden rounded-md border border-stone-300 text-xs">
             {WASH_TYPES.map((t) => (
               <button

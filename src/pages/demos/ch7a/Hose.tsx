@@ -7,14 +7,16 @@ import {
 } from '../../../lib/carwash'
 
 const GARNET = '#a52547'
-const PIPE = '#a8a29e'
 const PIPE_EDGE = '#78716c'
+/** vertical gradients: lit along the top, dark underneath, so a pipe reads as a cylinder */
+const PIPE_FILL = 'url(#ch7a-pipe)'
+const KINK_FILL = 'url(#ch7a-kink)'
 
 /** px of pipe diameter per car per hour */
-const K = 4
+const K = 8
 const W = 1000
-const H = 215
-const Y = 108 // pipe centerline
+const H = 250
+const Y = 126 // pipe centerline
 const X0 = 56
 const LEN = 112
 const REDUCER = 30
@@ -50,6 +52,19 @@ export function Hose({ type }: { type: WashType }) {
         role="img"
         aria-label={`The ${WASH_LABEL[type]} wash as a hose: pipes as wide as each station's flow`}
       >
+        <defs>
+          <linearGradient id="ch7a-pipe" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#d6d3d1" />
+            <stop offset="0.3" stopColor="#b4aea9" />
+            <stop offset="1" stopColor="#625c57" />
+          </linearGradient>
+          <linearGradient id="ch7a-kink" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#e4879d" />
+            <stop offset="0.3" stopColor="#c53e5d" />
+            <stop offset="1" stopColor="#5a0b24" />
+          </linearGradient>
+        </defs>
+
         {/* in */}
         <text x={X0 - 10} y={Y - 4} textAnchor="end" fontSize={11} fill="#78716c">
           {WASH_LABEL[type]}
@@ -61,7 +76,7 @@ export function Hose({ type }: { type: WashType }) {
         {segs.map((s, i) => {
           const hot = s.id === bottleneck
           const prev = segs[i - 1]
-          const fill = hot ? GARNET : PIPE
+          const fill = hot ? KINK_FILL : PIPE_FILL
           const edge = hot ? GARNET : PIPE_EDGE
           return (
             <g key={s.id}>
