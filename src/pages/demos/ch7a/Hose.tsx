@@ -56,6 +56,7 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
   const end = x - REDUCER
   const first = segs[0]
   const last = segs[segs.length - 1]
+  const maxR = Math.max(...segs.map((s) => s.r))
 
   // top and bottom silhouettes: straight along bodies, sloped across reducers
   const top = segs.flatMap((s) => [`${s.x1},${Y - s.r}`, `${s.x2},${Y - s.r}`])
@@ -79,25 +80,32 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
         aria-label={`The ${WASH_LABEL[type]} wash as a hose: pipes as wide as each station's flow`}
       >
         <defs>
-          <linearGradient id="ch7a-pipe" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#d6d3d1" />
-            <stop offset="0.3" stopColor="#b4aea9" />
-            <stop offset="1" stopColor="#625c57" />
+          {/* one light source for the whole hose: pinned in page space across
+              the fattest pipe, so narrow pipes on the same axis take the
+              gentler middle of the run instead of cramming all of it */}
+          <linearGradient id="ch7a-pipe" gradientUnits="userSpaceOnUse" x1={0} y1={Y - maxR} x2={0} y2={Y + maxR}>
+            <stop offset="0" stopColor="#dad7d4" />
+            <stop offset="0.28" stopColor="#bcb6b1" />
+            <stop offset="0.5" stopColor="#a19b96" />
+            <stop offset="1" stopColor="#5e5853" />
           </linearGradient>
-          <linearGradient id="ch7a-kink" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#e4879d" />
-            <stop offset="0.3" stopColor="#c53e5d" />
-            <stop offset="1" stopColor="#5a0b24" />
+          <linearGradient id="ch7a-kink" gradientUnits="userSpaceOnUse" x1={0} y1={Y - maxR} x2={0} y2={Y + maxR}>
+            <stop offset="0" stopColor="#e78fa4" />
+            <stop offset="0.28" stopColor="#cc4a68" />
+            <stop offset="0.5" stopColor="#ad3252" />
+            <stop offset="1" stopColor="#560a22" />
           </linearGradient>
-          <linearGradient id="ch7a-pipe-seam" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#c6c2bf" />
-            <stop offset="0.3" stopColor="#a39d98" />
-            <stop offset="1" stopColor="#524c48" />
+          <linearGradient id="ch7a-pipe-seam" gradientUnits="userSpaceOnUse" x1={0} y1={Y - maxR} x2={0} y2={Y + maxR}>
+            <stop offset="0" stopColor="#b9b5b2" />
+            <stop offset="0.28" stopColor="#9b958f" />
+            <stop offset="0.5" stopColor="#817b76" />
+            <stop offset="1" stopColor="#433e3a" />
           </linearGradient>
-          <linearGradient id="ch7a-kink-seam" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#d6788e" />
-            <stop offset="0.3" stopColor="#b33552" />
-            <stop offset="1" stopColor="#48081c" />
+          <linearGradient id="ch7a-kink-seam" gradientUnits="userSpaceOnUse" x1={0} y1={Y - maxR} x2={0} y2={Y + maxR}>
+            <stop offset="0" stopColor="#cb7085" />
+            <stop offset="0.28" stopColor="#aa3350" />
+            <stop offset="0.5" stopColor="#8c213f" />
+            <stop offset="1" stopColor="#3b0515" />
           </linearGradient>
           <linearGradient id="ch7a-mouth" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="#3f3a37" />
@@ -141,7 +149,7 @@ export function Hose({ type, showAnswers }: { type: WashType; showAnswers: boole
             d={`M${j.x},${Y - j.r} ${capDown(j.x, j.r)}`}
             fill="none"
             stroke={j.seam}
-            strokeWidth={1.6}
+            strokeWidth={1.8}
           />
         ))}
 
