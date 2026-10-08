@@ -31,8 +31,6 @@ const money = (v: number) =>
 
 const num = (v: number) => v.toLocaleString('en-US')
 
-const units = (n: number) => `${n} unit${n === 1 ? '' : 's'}`
-
 const listNames = (names: string[]) =>
   names.length <= 2
     ? names.join(' and ')
