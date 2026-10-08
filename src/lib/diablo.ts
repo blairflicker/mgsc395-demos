@@ -119,3 +119,36 @@ export function financials(plan: Plan): Financials {
     units,
   }
 }
+
+export interface BindingWorker {
+  worker: WorkerId
+  /** minutes of this worker one unit of the product needs */
+  perUnit: number
+  /** minutes this worker has left under the plan */
+  left: number
+}
+
+/** what stops the plan from holding more of product p */
+export type Binding =
+  | { kind: 'demand'; demand: number }
+  | { kind: 'worker'; workers: BindingWorker[] }
+
+/**
+ * Why product p can't go above maxFeasible(plan, p): either demand
+ * (company policy — make only what sells) or the worker(s) who would
+ * run out of minutes first.
+ */
+export function binding(plan: Plan, p: ProductId): Binding {
+  const cap = maxFeasible(plan, p)
+  if (cap >= PRODUCT_INFO[p].demand) return { kind: 'demand', demand: PRODUCT_INFO[p].demand }
+  const workers: BindingWorker[] = []
+  for (const w of WORKERS) {
+    const t = TIME[w][p]
+    if (t <= 0) continue
+    const usedByOthers = workerTotal(plan, w) - t * plan[p]
+    if (Math.floor((CAPACITY - usedByOthers) / t) === cap) {
+      workers.push({ worker: w, perUnit: t, left: CAPACITY - workerTotal(plan, w) })
+    }
+  }
+  return { kind: 'worker', workers }
+}
